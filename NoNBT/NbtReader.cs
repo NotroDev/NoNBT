@@ -149,7 +149,7 @@ public class NbtReader(Stream stream) : IDisposable
         short length = ReadShort();
         byte[] stringValue = Read(length);
 
-        return Encoding.UTF8.GetString(stringValue);
+        return ModifiedUtf8.GetString(stringValue);
     }
     
     public int ReadInt()

@@ -120,7 +120,7 @@ public class NbtWriter(Stream stream) : IDisposable
 
     public void WriteString(string value)
     {
-        byte[] stringBytes = Encoding.UTF8.GetBytes(value);
+        byte[] stringBytes = ModifiedUtf8.GetBytes(value);
         if (stringBytes.Length > short.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(value), $"String length in bytes ({stringBytes.Length}) exceeds maximum allowed ({short.MaxValue}).");
 
