@@ -19,4 +19,9 @@ public class NbtString(string? name, string value) : NbtTag(name)
     {
         return $"{base.ToString()}: {Value}";
     }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        return $"{GetIndent(indentLevel)}{FormatPropertyName()}\"{EscapeString(Value)}\"";
+    }
 }

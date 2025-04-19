@@ -19,4 +19,9 @@ public class NbtLongArray(string? name, long[] value) : NbtTag(name)
     {
         return $"{base.ToString()}: {Value}";
     }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        return $"{GetIndent(indentLevel)}{FormatPropertyName()}[{string.Join(", ", Value.Select(l => l.ToString()))}]";
+    }
 }

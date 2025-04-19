@@ -2,7 +2,7 @@
 
 public class NbtInt(string? name, int value) : NbtTag(name)
 {
-    public override NbtTagType TagType => NbtTagType.Long;
+    public override NbtTagType TagType => NbtTagType.Int;
     
     public int Value { get; set; } = value;
     
@@ -18,5 +18,10 @@ public class NbtInt(string? name, int value) : NbtTag(name)
     public override string ToString()
     {
         return $"{base.ToString()}: {Value}";
+    }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        return $"{GetIndent(indentLevel)}{FormatPropertyName()}{Value}";
     }
 }

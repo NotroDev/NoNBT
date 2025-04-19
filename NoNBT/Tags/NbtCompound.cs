@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Text;
 
 namespace NoNBT.Tags;
 
@@ -43,12 +44,12 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
 
     public void Add(NbtTag tag)
     {
-        ArgumentNullException.ThrowIfNull(tag);
-        if (string.IsNullOrEmpty(tag.Name))
+        if (tag.Name == null)
         {
-            throw new ArgumentException("Tag without a name cannot be added to a compound.");
+            throw new ArgumentException("Tag added to NbtCompound cannot have a null name.", nameof(tag));
         }
-        Add(tag.Name, tag);
+        
+        _tags.Add(tag.Name, tag);
     }
     
     public void Add(string key, object value)
@@ -97,5 +98,38 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
     public override string ToString()
     {
         return $"{base.ToString()} {{{Count} entries}}";
+    }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        var sb = new StringBuilder();
+        string currentIndent = GetIndent(indentLevel);
+
+        sb.Append(currentIndent);
+        sb.Append(FormatPropertyName());
+
+        if (Count == 0)
+        {
+            sb.Append("{}");
+            return sb.ToString();
+        }
+
+        sb.Append("{\n");
+
+        List<KeyValuePair<string, NbtTag>> tagList = _tags.ToList();
+        for (var i = 0; i < tagList.Count; i++)
+        {
+            KeyValuePair<string, NbtTag> kvp = tagList[i];
+            sb.Append(kvp.Value.ToJson(indentLevel + 1));
+            if (i < tagList.Count - 1)
+            {
+                sb.Append(',');
+            }
+            sb.Append('\n');
+        }
+
+        sb.Append(currentIndent);
+        sb.Append('}');
+        return sb.ToString();
     }
 }

@@ -19,4 +19,9 @@ public class NbtShort(string? name, short value) : NbtTag(name)
     {
         return $"{base.ToString()}: {Value}";
     }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        return $"{GetIndent(indentLevel)}{FormatPropertyName()}{Value}";
+    }
 }

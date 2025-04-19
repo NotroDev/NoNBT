@@ -5,43 +5,25 @@ using NoNBT.Tags;
 
 namespace NoNBT;
 
-public class NbtReader
+public class NbtReader(Stream stream)
 {
-    private Stream _stream;
     
-    private static readonly byte[] HelloWorldNbtBytes =
-    [
-        0x0A, 0x00, 0x0B, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64,
-        0x08, 0x00, 0x04, 0x6E, 0x61, 0x6D, 0x65, 0x00, 0x09, 0x42, 0x61, 0x6E, 0x61, 0x6E,
-        0x72, 0x61, 0x6D, 0x61, 0x00
-    ];
-
-    public void Test()
+    public NbtTag? ReadTag(bool named = true)
     {
-        _stream = new MemoryStream(HelloWorldNbtBytes);
-        NbtTag? tag = ReadTag();
-        
-        // log out the tag and its contents if it is a compound
-        Console.WriteLine(tag);
-        if (tag is NbtCompound compound)
-        {
-            foreach (KeyValuePair<string, NbtTag> child in compound)
-            {
-                Console.WriteLine(child);
-            }
-        }
-    }
-    
-    public NbtTag? ReadTag()
-    {
-        var tagType = (NbtTagType)_stream.ReadByte();
+        var tagType = (NbtTagType)stream.ReadByte();
         if (tagType == NbtTagType.End)
             return null;
 
-        string name = ReadString();
+        string? name = null;
+
+        if (named)
+        {
+            name = ReadString();
+        }
+        
         NbtTag tag = tagType switch
         {
-            NbtTagType.Byte => new NbtByte(name, (byte)_stream.ReadByte()),
+            NbtTagType.Byte => new NbtByte(name, (byte)stream.ReadByte()),
             NbtTagType.Short => new NbtShort(name, ReadShort()),
             NbtTagType.Int => new NbtInt(name, ReadInt()),
             NbtTagType.Long => new NbtLong(name, ReadLong()),
@@ -62,7 +44,7 @@ public class NbtReader
 
     private NbtList ReadListTag(string name)
     {
-        var listType = (NbtTagType)_stream.ReadByte();
+        var listType = (NbtTagType)stream.ReadByte();
         int count = ReadInt();
         var list = new NbtList(name, listType);
 
@@ -71,40 +53,40 @@ public class NbtReader
             switch (listType)
             {
                 case NbtTagType.Byte:
-                    list.Add(new NbtByte("", (byte)_stream.ReadByte()));
+                    list.Add(new NbtByte(null, (byte)stream.ReadByte()));
                     break;
                 case NbtTagType.Short:
-                    list.Add(new NbtShort("", ReadShort()));
+                    list.Add(new NbtShort(null, ReadShort()));
                     break;
                 case NbtTagType.Int:
-                    list.Add(new NbtInt("", ReadInt()));
+                    list.Add(new NbtInt(null, ReadInt()));
                     break;
                 case NbtTagType.Long:
-                    list.Add(new NbtLong("", ReadLong()));
+                    list.Add(new NbtLong(null, ReadLong()));
                     break;
                 case NbtTagType.Float:
-                    list.Add(new NbtFloat("", ReadFloat()));
+                    list.Add(new NbtFloat(null, ReadFloat()));
                     break;
                 case NbtTagType.Double:
-                    list.Add(new NbtDouble("", ReadDouble()));
+                    list.Add(new NbtDouble(null, ReadDouble()));
                     break;
                 case NbtTagType.ByteArray:
-                    list.Add(new NbtByteArray("", ReadByteArray()));
+                    list.Add(new NbtByteArray(null, ReadByteArray()));
                     break;
                 case NbtTagType.String:
-                    list.Add(new NbtString("", ReadString()));
+                    list.Add(new NbtString(null, ReadString()));
                     break;
                 case NbtTagType.List:
-                    list.Add(ReadListTag(""));
+                    list.Add(ReadListTag(null));
                     break;
                 case NbtTagType.Compound:
-                    list.Add(ReadCompoundTag(""));
+                    list.Add(ReadCompoundTag(null));
                     break;
                 case NbtTagType.IntArray:
-                    list.Add(new NbtIntArray("", ReadIntArray()));
+                    list.Add(new NbtIntArray(null, ReadIntArray()));
                     break;
                 case NbtTagType.LongArray:
-                    list.Add(new NbtLongArray("", ReadLongArray()));
+                    list.Add(new NbtLongArray(null, ReadLongArray()));
                     break;
                 case NbtTagType.End:
                 default:
@@ -174,7 +156,7 @@ public class NbtReader
     public int ReadInt()
     {
         var dat = new byte[4];
-        _stream.ReadExactly(dat, 0, 4);
+        stream.ReadExactly(dat, 0, 4);
         var value = BitConverter.ToInt32(dat, 0);
         return IPAddress.NetworkToHostOrder(value);
     }
@@ -207,7 +189,7 @@ public class NbtReader
     
     public int ReadByte()
     {
-        return _stream.ReadByte();
+        return stream.ReadByte();
     }
     
     public byte[] Read(int length)
@@ -220,7 +202,7 @@ public class NbtReader
             var totalRead = 0;
             while (totalRead < length)
             {
-                int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
+                int bytesRead = stream.Read(buffer, totalRead, length - totalRead);
                 if (bytesRead <= 0) break;
                 totalRead += bytesRead;
             }

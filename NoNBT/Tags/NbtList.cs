@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Text;
 
 namespace NoNBT.Tags;
 
@@ -87,5 +88,35 @@ public class NbtList(string? name, NbtTagType listType) : NbtTag(name), IList<Nb
     public override string ToString()
     {
         return $"{base.ToString()}<{ListType}>[{Count} entries]";
+    }
+    
+    public override string ToJson(int indentLevel = 0)
+    {
+        var sb = new StringBuilder();
+        string currentIndent = GetIndent(indentLevel);
+
+        sb.Append(currentIndent);
+        sb.Append(FormatPropertyName());
+        if (Count == 0)
+        {
+            sb.Append("[]");
+            return sb.ToString();
+        }
+
+        sb.Append("[\n");
+
+        for (var i = 0; i < _tags.Count; i++)
+        {
+            sb.Append(_tags[i].ToJson(indentLevel + 1));
+            if (i < _tags.Count - 1)
+            {
+                sb.Append(',');
+            }
+            sb.Append('\n');
+        }
+
+        sb.Append(currentIndent);
+        sb.Append(']');
+        return sb.ToString();
     }
 }
