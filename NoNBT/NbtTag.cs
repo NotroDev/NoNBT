@@ -2,7 +2,7 @@
 
 public abstract class NbtTag(string? name)
 {
-    public string? Name { get; init; } = name;
+    public string? Name { get; set; } = name;
 
     public abstract NbtTagType TagType { get; }
     

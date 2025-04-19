@@ -3,7 +3,7 @@ using System.Text;
 
 namespace NoNBT.Tags;
 
-public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTag>
+public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTag>, IEnumerable<NbtTag>
 {
     private readonly Dictionary<string, NbtTag> _tags = new();
     
@@ -29,6 +29,16 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
             ValidateTag(key, value);
             _tags[key] = value;
         }
+    }
+    
+    public T? Get<T>(string key) where T : NbtTag
+    {
+        if (TryGetValue(key, out NbtTag tag) && tag is T typedTag)
+        {
+            return typedTag;
+        }
+    
+        return null;
     }
     
     public ICollection<string> Keys => _tags.Keys;
@@ -71,7 +81,21 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
     
     public bool ContainsKey(string key) => _tags.ContainsKey(key);
     public bool Remove(string key) => _tags.Remove(key);
+    
     public bool TryGetValue(string key, out NbtTag value) => _tags.TryGetValue(key, out value!);
+    
+    public bool TryGetValue<T>(string key, out T value) where T : NbtTag
+    {
+        if (_tags.TryGetValue(key, out NbtTag? tag) && tag is T typedTag)
+        {
+            value = typedTag;
+            return true;
+        }
+
+        value = null!;
+        return false;
+    }
+    
     public void Add(KeyValuePair<string, NbtTag> item) => Add(item.Key, item.Value);
     public void Clear() => _tags.Clear();
     public bool Contains(KeyValuePair<string, NbtTag> item) => _tags.Contains(item);
@@ -79,6 +103,7 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
     public bool Remove(KeyValuePair<string, NbtTag> item) => ((ICollection<KeyValuePair<string, NbtTag>>)_tags).Remove(item);
     public IEnumerator<KeyValuePair<string, NbtTag>> GetEnumerator() => _tags.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator<NbtTag> IEnumerable<NbtTag>.GetEnumerator() => _tags.Values.GetEnumerator();
     
     private static void ValidateTag(string key, NbtTag value)
     {

@@ -5,9 +5,8 @@ using NoNBT.Tags;
 
 namespace NoNBT;
 
-public class NbtReader(Stream stream)
+public class NbtReader(Stream stream) : IDisposable
 {
-    
     public NbtTag? ReadTag(bool named = true)
     {
         var tagType = (NbtTagType)stream.ReadByte();
@@ -259,5 +258,12 @@ public class NbtReader(Stream stream)
             Array.Reverse(bytes);
 
         return BitConverter.ToSingle(bytes, 0);
+    }
+    
+    public void Dispose()
+    {
+        return;
+        
+        GC.SuppressFinalize(this);
     }
 }
