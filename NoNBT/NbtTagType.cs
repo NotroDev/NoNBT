@@ -1,6 +1,6 @@
 ﻿namespace NoNBT;
 
-public enum NbtTagType
+public enum NbtTagType : byte
 {
     End = 0,
     Byte = 1,

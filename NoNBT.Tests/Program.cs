@@ -1,1 +1,4 @@
-﻿Console.WriteLine("Hello, World!");
+﻿using NoNBT;
+using NoNBT.Tags;
+
+Console.WriteLine("Hello World!");
