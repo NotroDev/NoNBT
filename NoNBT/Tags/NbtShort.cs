@@ -4,7 +4,7 @@ public class NbtShort(string? name, short value) : NbtTag(name)
 {
     public override NbtTagType TagType => NbtTagType.Short;
     
-    public short Value { get; set; }
+    public short Value { get; set; } = value;
     
     public NbtShort(short value) : this(null, value) { }
 
