@@ -3,7 +3,7 @@ using System.Text;
 
 namespace NoNBT.Tags;
 
-public class NbtList(string? name, NbtTagType listType) : NbtTag(name), IList<NbtTag>
+public class ListTag(string? name, NbtTagType listType) : NbtTag(name), IList<NbtTag>
 {
     private readonly List<NbtTag> _tags = [];
     
@@ -11,7 +11,7 @@ public class NbtList(string? name, NbtTagType listType) : NbtTag(name), IList<Nb
 
     public NbtTagType ListType { get; init; } = listType;
     
-    public NbtList(string? name, NbtTagType listType, IEnumerable<NbtTag>? initialTags) : this(name, listType)
+    public ListTag(string? name, NbtTagType listType, IEnumerable<NbtTag>? initialTags) : this(name, listType)
     {
         if (initialTags == null) return;
         foreach (NbtTag tag in initialTags)
@@ -82,7 +82,7 @@ public class NbtList(string? name, NbtTagType listType) : NbtTag(name), IList<Nb
     public override NbtTag Clone()
     {
         IEnumerable<NbtTag> clonedTags = _tags.Select(tag => tag.Clone());
-        return new NbtList(Name, ListType, clonedTags);
+        return new ListTag(Name, ListType, clonedTags);
     }
     
     public override string ToString()

@@ -1,6 +1,6 @@
 ﻿namespace NoNBT.Tags;
 
-public class NbtByte(string? name, byte value) : NbtTag(name)
+public class ByteTag(string? name, byte value) : NbtTag(name)
 {
     public override NbtTagType TagType => NbtTagType.Byte;
     
@@ -12,17 +12,17 @@ public class NbtByte(string? name, byte value) : NbtTag(name)
         set => Value = (byte)(value ? 1 : 0);
     }
     
-    public NbtByte(byte value) : this(null, value) { }
-    public NbtByte(string? name, bool value) : this(name, (byte)(value ? 1 : 0)) { }
-    public NbtByte(bool value) : this(null, value) { }
+    public ByteTag(byte value) : this(null, value) { }
+    public ByteTag(string? name, bool value) : this(name, (byte)(value ? 1 : 0)) { }
+    public ByteTag(bool value) : this(null, value) { }
     
     public override NbtTag Clone()
     {
-        return new NbtByte(Name, Value);
+        return new ByteTag(Name, Value);
     }
     
-    public static explicit operator byte(NbtByte tag) => tag.Value;
-    public static explicit operator bool(NbtByte tag) => tag.BoolValue;
+    public static explicit operator byte(ByteTag tag) => tag.Value;
+    public static explicit operator bool(ByteTag tag) => tag.BoolValue;
     
     public override string ToString()
     {

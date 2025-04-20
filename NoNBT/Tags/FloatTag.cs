@@ -1,19 +1,19 @@
 ﻿namespace NoNBT.Tags;
 
-public class NbtDouble(string? name, double value) : NbtTag(name)
+public class FloatTag(string? name, float value) : NbtTag(name)
 {
-    public override NbtTagType TagType => NbtTagType.Double;
+    public override NbtTagType TagType => NbtTagType.Float;
     
-    public double Value { get; set; } = value;
+    public float Value { get; set; } = value;
     
-    public NbtDouble(double value) : this(null, value) { }
+    public FloatTag(float value) : this(null, value) { }
 
     public override NbtTag Clone()
     {
-        return new NbtDouble(Name, Value);
+        return new FloatTag(Name, Value);
     }
 
-    public static explicit operator double(NbtDouble tag) => tag.Value;
+    public static explicit operator float(FloatTag tag) => tag.Value;
 
     public override string ToString()
     {

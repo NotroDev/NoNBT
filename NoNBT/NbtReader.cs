@@ -24,18 +24,18 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
         NbtTag tag = tagType switch
         {
-            NbtTagType.Byte => new NbtByte(name, (byte)ReadByteChecked()),
-            NbtTagType.Short => new NbtShort(name, ReadShort()),
+            NbtTagType.Byte => new ByteTag(name, (byte)ReadByteChecked()),
+            NbtTagType.Short => new ShortTag(name, ReadShort()),
             NbtTagType.Int => new NbtInt(name, ReadInt()),
-            NbtTagType.Long => new NbtLong(name, ReadLong()),
-            NbtTagType.Float => new NbtFloat(name, ReadFloat()),
-            NbtTagType.Double => new NbtDouble(name, ReadDouble()),
-            NbtTagType.ByteArray => new NbtByteArray(name, ReadByteArray()),
-            NbtTagType.String => new NbtString(name, ReadString()),
+            NbtTagType.Long => new LongTag(name, ReadLong()),
+            NbtTagType.Float => new FloatTag(name, ReadFloat()),
+            NbtTagType.Double => new DoubleTag(name, ReadDouble()),
+            NbtTagType.ByteArray => new ByteArrayTag(name, ReadByteArray()),
+            NbtTagType.String => new StringTag(name, ReadString()),
             NbtTagType.List => ReadListTag(name),
             NbtTagType.Compound => ReadCompoundTag(name),
-            NbtTagType.IntArray => new NbtIntArray(name, ReadIntArray()),
-            NbtTagType.LongArray => new NbtLongArray(name, ReadLongArray()),
+            NbtTagType.IntArray => new IntArrayTag(name, ReadIntArray()),
+            NbtTagType.LongArray => new LongArrayTag(name, ReadLongArray()),
             NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
             _ => throw new IOException($"Unsupported tag type: {tagType}")
         };
@@ -43,32 +43,32 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return tag;
     }
 
-    private NbtList ReadListTag(string? name)
+    private ListTag ReadListTag(string? name)
     {
         CheckDisposed();
         var listType = (NbtTagType)ReadByteChecked();
         int count = ReadInt();
         if (count < 0) throw new IOException($"Invalid list count: {count}");
 
-        var list = new NbtList(name, listType);
+        var list = new ListTag(name, listType);
         if (count == 0) return list;
 
         for (var i = 0; i < count; i++)
         {
             NbtTag element = listType switch
             {
-                NbtTagType.Byte => new NbtByte(null, (byte)ReadByteChecked()),
-                NbtTagType.Short => new NbtShort(null, ReadShort()),
+                NbtTagType.Byte => new ByteTag(null, (byte)ReadByteChecked()),
+                NbtTagType.Short => new ShortTag(null, ReadShort()),
                 NbtTagType.Int => new NbtInt(null, ReadInt()),
-                NbtTagType.Long => new NbtLong(null, ReadLong()),
-                NbtTagType.Float => new NbtFloat(null, ReadFloat()),
-                NbtTagType.Double => new NbtDouble(null, ReadDouble()),
-                NbtTagType.ByteArray => new NbtByteArray(null, ReadByteArray()),
-                NbtTagType.String => new NbtString(null, ReadString()),
+                NbtTagType.Long => new LongTag(null, ReadLong()),
+                NbtTagType.Float => new FloatTag(null, ReadFloat()),
+                NbtTagType.Double => new DoubleTag(null, ReadDouble()),
+                NbtTagType.ByteArray => new ByteArrayTag(null, ReadByteArray()),
+                NbtTagType.String => new StringTag(null, ReadString()),
                 NbtTagType.List => ReadListTag(null),
                 NbtTagType.Compound => ReadCompoundTag(null),
-                NbtTagType.IntArray => new NbtIntArray(null, ReadIntArray()),
-                NbtTagType.LongArray => new NbtLongArray(null, ReadLongArray()),
+                NbtTagType.IntArray => new IntArrayTag(null, ReadIntArray()),
+                NbtTagType.LongArray => new LongArrayTag(null, ReadLongArray()),
                 NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
                 _ => throw new IOException($"Unsupported list element type: {listType}")
             };
@@ -77,10 +77,10 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return list;
     }
 
-    private NbtCompound ReadCompoundTag(string? name)
+    private CompoundTag ReadCompoundTag(string? name)
     {
         CheckDisposed();
-        var compound = new NbtCompound(name);
+        var compound = new CompoundTag(name);
         while (true)
         {
             NbtTag? tag = ReadTag();
@@ -204,50 +204,50 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
         NbtTag tag = tagType switch
         {
-            NbtTagType.Byte => new NbtByte(name, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Short => new NbtShort(name, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Byte => new ByteTag(name, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Short => new ShortTag(name, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.Int => new NbtInt(name, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Long => new NbtLong(name, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Float => new NbtFloat(name, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Double => new NbtDouble(name, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.ByteArray => new NbtByteArray(name, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.String => new NbtString(name, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Long => new LongTag(name, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Float => new FloatTag(name, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Double => new DoubleTag(name, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.ByteArray => new ByteArrayTag(name, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.String => new StringTag(name, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.List => await ReadListTagAsync(name, cancellationToken).ConfigureAwait(false),
             NbtTagType.Compound => await ReadCompoundTagAsync(name, cancellationToken).ConfigureAwait(false),
-            NbtTagType.IntArray => new NbtIntArray(name, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.LongArray => new NbtLongArray(name, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.IntArray => new IntArrayTag(name, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.LongArray => new LongArrayTag(name, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
             _ => throw new IOException($"Unsupported tag type: {tagType}")
         };
         return tag;
     }
 
-    private async ValueTask<NbtList> ReadListTagAsync(string? name, CancellationToken cancellationToken = default)
+    private async ValueTask<ListTag> ReadListTagAsync(string? name, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
         var listType = (NbtTagType)await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false);
         int count = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
         if (count < 0) throw new IOException($"Invalid list count: {count}");
 
-        var list = new NbtList(name, listType);
+        var list = new ListTag(name, listType);
         if (count == 0) return list;
 
         for (var i = 0; i < count; i++)
         {
             NbtTag element = listType switch
             {
-                NbtTagType.Byte => new NbtByte(null, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Short => new NbtShort(null, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Byte => new ByteTag(null, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Short => new ShortTag(null, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.Int => new NbtInt(null, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Long => new NbtLong(null, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Float => new NbtFloat(null, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Double => new NbtDouble(null, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.ByteArray => new NbtByteArray(null, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.String => new NbtString(null, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Long => new LongTag(null, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Float => new FloatTag(null, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Double => new DoubleTag(null, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.ByteArray => new ByteArrayTag(null, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.String => new StringTag(null, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.List => await ReadListTagAsync(null, cancellationToken).ConfigureAwait(false),
                 NbtTagType.Compound => await ReadCompoundTagAsync(null, cancellationToken).ConfigureAwait(false),
-                NbtTagType.IntArray => new NbtIntArray(null, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.LongArray => new NbtLongArray(null, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.IntArray => new IntArrayTag(null, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.LongArray => new LongArrayTag(null, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
                 _ => throw new IOException($"Unsupported list element type: {listType}")
             };
@@ -256,10 +256,10 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return list;
     }
 
-    private async ValueTask<NbtCompound> ReadCompoundTagAsync(string? name, CancellationToken cancellationToken = default)
+    private async ValueTask<CompoundTag> ReadCompoundTagAsync(string? name, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        var compound = new NbtCompound(name);
+        var compound = new CompoundTag(name);
         while (true)
         {
             NbtTag? tag = await ReadTagAsync(true, cancellationToken).ConfigureAwait(false);

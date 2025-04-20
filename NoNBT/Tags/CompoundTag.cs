@@ -3,13 +3,13 @@ using System.Text;
 
 namespace NoNBT.Tags;
 
-public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTag>, IEnumerable<NbtTag>
+public class CompoundTag(string? name) : NbtTag(name), IDictionary<string, NbtTag>, IEnumerable<NbtTag>
 {
     private readonly Dictionary<string, NbtTag> _tags = new();
     
     public override NbtTagType TagType => NbtTagType.Compound;
     
-    public NbtCompound(string? name, IEnumerable<KeyValuePair<string, NbtTag>>? initialTags) : this(name)
+    public CompoundTag(string? name, IEnumerable<KeyValuePair<string, NbtTag>>? initialTags) : this(name)
     {
         if (initialTags == null) return;
         
@@ -19,7 +19,7 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
         }
     }
     
-    public NbtCompound() : this(null) { }
+    public CompoundTag() : this(null) { }
     
     public NbtTag this[string key]
     {
@@ -117,7 +117,7 @@ public class NbtCompound(string? name) : NbtTag(name), IDictionary<string, NbtTa
     public override NbtTag Clone()
     {
         IEnumerable<KeyValuePair<string, NbtTag>> clonedTags = _tags.Select(kvp => new KeyValuePair<string, NbtTag>(kvp.Key, kvp.Value.Clone()));
-        return new NbtCompound(Name, clonedTags);
+        return new CompoundTag(Name, clonedTags);
     }
     
     public override string ToString()

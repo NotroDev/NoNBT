@@ -31,49 +31,49 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         CheckDisposed();
         switch (tag.TagType)
         {
-            case NbtTagType.Byte: WriteByte(((NbtByte)tag).Value); break;
-            case NbtTagType.Short: WriteShort(((NbtShort)tag).Value); break;
+            case NbtTagType.Byte: WriteByte(((ByteTag)tag).Value); break;
+            case NbtTagType.Short: WriteShort(((ShortTag)tag).Value); break;
             case NbtTagType.Int: WriteInt(((NbtInt)tag).Value); break;
-            case NbtTagType.Long: WriteLong(((NbtLong)tag).Value); break;
-            case NbtTagType.Float: WriteFloat(((NbtFloat)tag).Value); break;
-            case NbtTagType.Double: WriteDouble(((NbtDouble)tag).Value); break;
-            case NbtTagType.ByteArray: WriteByteArrayPayload((NbtByteArray)tag); break;
-            case NbtTagType.String: WriteString(((NbtString)tag).Value); break;
-            case NbtTagType.List: WriteListPayload((NbtList)tag); break;
-            case NbtTagType.Compound: WriteCompoundPayload((NbtCompound)tag); break;
-            case NbtTagType.IntArray: WriteIntArrayPayload((NbtIntArray)tag); break;
-            case NbtTagType.LongArray: WriteLongArrayPayload((NbtLongArray)tag); break;
+            case NbtTagType.Long: WriteLong(((LongTag)tag).Value); break;
+            case NbtTagType.Float: WriteFloat(((FloatTag)tag).Value); break;
+            case NbtTagType.Double: WriteDouble(((DoubleTag)tag).Value); break;
+            case NbtTagType.ByteArray: WriteByteArrayPayload((ByteArrayTag)tag); break;
+            case NbtTagType.String: WriteString(((StringTag)tag).Value); break;
+            case NbtTagType.List: WriteListPayload((ListTag)tag); break;
+            case NbtTagType.Compound: WriteCompoundPayload((CompoundTag)tag); break;
+            case NbtTagType.IntArray: WriteIntArrayPayload((IntArrayTag)tag); break;
+            case NbtTagType.LongArray: WriteLongArrayPayload((LongArrayTag)tag); break;
             case NbtTagType.End: break;
             default: throw new NotImplementedException($"Unsupported tag type for writing: {tag.TagType}");
         }
     }
 
-    private void WriteListPayload(NbtList tag)
+    private void WriteListPayload(ListTag tag)
     {
         WriteByte((byte)tag.ListType);
         WriteInt(tag.Count);
         foreach (NbtTag item in tag) WriteTagPayload(item);
     }
 
-    private void WriteCompoundPayload(NbtCompound tag)
+    private void WriteCompoundPayload(CompoundTag tag)
     {
         foreach (KeyValuePair<string, NbtTag> childTagPair in tag) WriteTag(childTagPair.Value);
         WriteByte((byte)NbtTagType.End);
     }
 
-    private void WriteByteArrayPayload(NbtByteArray tag)
+    private void WriteByteArrayPayload(ByteArrayTag tag)
     {
         WriteInt(tag.Value.Length);
         Write(tag.Value);
     }
 
-    private void WriteIntArrayPayload(NbtIntArray tag)
+    private void WriteIntArrayPayload(IntArrayTag tag)
     {
         WriteInt(tag.Value.Length);
         foreach (int value in tag.Value) WriteInt(value);
     }
 
-    private void WriteLongArrayPayload(NbtLongArray tag)
+    private void WriteLongArrayPayload(LongArrayTag tag)
     {
         WriteInt(tag.Value.Length);
         foreach (long value in tag.Value) WriteLong(value);
@@ -162,49 +162,49 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         CheckDisposed();
         return tag.TagType switch
         {
-            NbtTagType.Byte => WriteByteAsync(((NbtByte)tag).Value, cancellationToken),
-            NbtTagType.Short => WriteShortAsync(((NbtShort)tag).Value, cancellationToken),
+            NbtTagType.Byte => WriteByteAsync(((ByteTag)tag).Value, cancellationToken),
+            NbtTagType.Short => WriteShortAsync(((ShortTag)tag).Value, cancellationToken),
             NbtTagType.Int => WriteIntAsync(((NbtInt)tag).Value, cancellationToken),
-            NbtTagType.Long => WriteLongAsync(((NbtLong)tag).Value, cancellationToken),
-            NbtTagType.Float => WriteFloatAsync(((NbtFloat)tag).Value, cancellationToken),
-            NbtTagType.Double => WriteDoubleAsync(((NbtDouble)tag).Value, cancellationToken),
-            NbtTagType.ByteArray => WriteByteArrayPayloadAsync((NbtByteArray)tag, cancellationToken),
-            NbtTagType.String => WriteStringAsync(((NbtString)tag).Value, cancellationToken),
-            NbtTagType.List => WriteListPayloadAsync((NbtList)tag, cancellationToken),
-            NbtTagType.Compound => WriteCompoundPayloadAsync((NbtCompound)tag, cancellationToken),
-            NbtTagType.IntArray => WriteIntArrayPayloadAsync((NbtIntArray)tag, cancellationToken),
-            NbtTagType.LongArray => WriteLongArrayPayloadAsync((NbtLongArray)tag, cancellationToken),
+            NbtTagType.Long => WriteLongAsync(((LongTag)tag).Value, cancellationToken),
+            NbtTagType.Float => WriteFloatAsync(((FloatTag)tag).Value, cancellationToken),
+            NbtTagType.Double => WriteDoubleAsync(((DoubleTag)tag).Value, cancellationToken),
+            NbtTagType.ByteArray => WriteByteArrayPayloadAsync((ByteArrayTag)tag, cancellationToken),
+            NbtTagType.String => WriteStringAsync(((StringTag)tag).Value, cancellationToken),
+            NbtTagType.List => WriteListPayloadAsync((ListTag)tag, cancellationToken),
+            NbtTagType.Compound => WriteCompoundPayloadAsync((CompoundTag)tag, cancellationToken),
+            NbtTagType.IntArray => WriteIntArrayPayloadAsync((IntArrayTag)tag, cancellationToken),
+            NbtTagType.LongArray => WriteLongArrayPayloadAsync((LongArrayTag)tag, cancellationToken),
             NbtTagType.End => default,
             _ => throw new NotImplementedException($"Unsupported tag type for async writing: {tag.TagType}")
         };
     }
 
-    private async ValueTask WriteListPayloadAsync(NbtList tag, CancellationToken cancellationToken = default)
+    private async ValueTask WriteListPayloadAsync(ListTag tag, CancellationToken cancellationToken = default)
     {
         await WriteByteAsync((byte)tag.ListType, cancellationToken).ConfigureAwait(false);
         await WriteIntAsync(tag.Count, cancellationToken).ConfigureAwait(false);
         foreach (NbtTag item in tag) await WriteTagPayloadAsync(item, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask WriteCompoundPayloadAsync(NbtCompound tag, CancellationToken cancellationToken = default)
+    private async ValueTask WriteCompoundPayloadAsync(CompoundTag tag, CancellationToken cancellationToken = default)
     {
         foreach (KeyValuePair<string, NbtTag> childTagPair in tag) await WriteTagAsync(childTagPair.Value, true, cancellationToken).ConfigureAwait(false);
         await WriteByteAsync((byte)NbtTagType.End, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask WriteByteArrayPayloadAsync(NbtByteArray tag, CancellationToken cancellationToken = default)
+    private async ValueTask WriteByteArrayPayloadAsync(ByteArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
         await WriteAsync(tag.Value, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask WriteIntArrayPayloadAsync(NbtIntArray tag, CancellationToken cancellationToken = default)
+    private async ValueTask WriteIntArrayPayloadAsync(IntArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
         foreach (int value in tag.Value) await WriteIntAsync(value, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask WriteLongArrayPayloadAsync(NbtLongArray tag, CancellationToken cancellationToken = default)
+    private async ValueTask WriteLongArrayPayloadAsync(LongArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
         foreach (long value in tag.Value) await WriteLongAsync(value, cancellationToken).ConfigureAwait(false);
