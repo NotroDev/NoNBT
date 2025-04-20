@@ -30,7 +30,7 @@ public class NbtReadWriteTests
         {
             case NbtTagType.Byte: Assert.AreEqual(((ByteTag)expected).Value, ((ByteTag)actual).Value); break;
             case NbtTagType.Short: Assert.AreEqual(((ShortTag)expected).Value, ((ShortTag)actual).Value); break;
-            case NbtTagType.Int: Assert.AreEqual(((NbtInt)expected).Value, ((NbtInt)actual).Value); break;
+            case NbtTagType.Int: Assert.AreEqual(((IntTag)expected).Value, ((IntTag)actual).Value); break;
             case NbtTagType.Long: Assert.AreEqual(((LongTag)expected).Value, ((LongTag)actual).Value); break;
             case NbtTagType.Float: Assert.AreEqual(((FloatTag)expected).Value, ((FloatTag)actual).Value); break;
             case NbtTagType.Double: Assert.AreEqual(((DoubleTag)expected).Value, ((DoubleTag)actual).Value); break;
@@ -86,7 +86,7 @@ public class NbtReadWriteTests
     [TestMethod]
     public void TestIntTag()
     {
-        (NbtInt? original, NbtInt? read) = ReadWriteTag(new NbtInt("TestInt", 1234567890));
+        (IntTag? original, IntTag? read) = ReadWriteTag(new IntTag("TestInt", 1234567890));
         AssertTagEquals(original, read);
     }
 
@@ -176,9 +176,9 @@ public class NbtReadWriteTests
     {
         var list = new ListTag("TestListInt", NbtTagType.Int)
         {
-            new NbtInt(null, 1),
-            new NbtInt(null, 2),
-            new NbtInt(null, 3)
+            new IntTag(null, 1),
+            new IntTag(null, 2),
+            new IntTag(null, 3)
         };
         (ListTag? original, ListTag? read) = ReadWriteTag(list);
         AssertTagEquals(original, read);
@@ -216,14 +216,14 @@ public class NbtReadWriteTests
         var c1 = new CompoundTag(null)
         {
             new StringTag("ItemName", "First"),
-            new NbtInt("ItemValue", 10)
+            new IntTag("ItemValue", 10)
         };
         list.Add(c1);
 
         var c2 = new CompoundTag(null)
         {
             new StringTag("ItemName", "Second"),
-            new NbtInt("ItemValue", 20)
+            new IntTag("ItemValue", 20)
         };
         list.Add(c2);
 
@@ -256,7 +256,7 @@ public class NbtReadWriteTests
     [TestMethod]
     public void TestCompoundTag_Nested()
     {
-        var root = new CompoundTag("Root") { new NbtInt("RootInt", 100) };
+        var root = new CompoundTag("Root") { new IntTag("RootInt", 100) };
 
         var nested = new CompoundTag("Nested") { new FloatTag("NestedFloat", 3.14f) };
 
@@ -279,7 +279,7 @@ public class NbtReadWriteTests
     {
         var root = new CompoundTag("Level")
         {
-            new NbtInt("intTest", int.MaxValue),
+            new IntTag("intTest", int.MaxValue),
             new ByteTag("byteTest", byte.MaxValue),
             new StringTag("stringTest", "HELLO WORLD THIS IS A TEST STRING ÅÄÖ!"),
             new DoubleTag("doubleTest", 0.49312871321823148d),

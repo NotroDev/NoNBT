@@ -33,7 +33,7 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         {
             case NbtTagType.Byte: WriteByte(((ByteTag)tag).Value); break;
             case NbtTagType.Short: WriteShort(((ShortTag)tag).Value); break;
-            case NbtTagType.Int: WriteInt(((NbtInt)tag).Value); break;
+            case NbtTagType.Int: WriteInt(((IntTag)tag).Value); break;
             case NbtTagType.Long: WriteLong(((LongTag)tag).Value); break;
             case NbtTagType.Float: WriteFloat(((FloatTag)tag).Value); break;
             case NbtTagType.Double: WriteDouble(((DoubleTag)tag).Value); break;
@@ -164,7 +164,7 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         {
             NbtTagType.Byte => WriteByteAsync(((ByteTag)tag).Value, cancellationToken),
             NbtTagType.Short => WriteShortAsync(((ShortTag)tag).Value, cancellationToken),
-            NbtTagType.Int => WriteIntAsync(((NbtInt)tag).Value, cancellationToken),
+            NbtTagType.Int => WriteIntAsync(((IntTag)tag).Value, cancellationToken),
             NbtTagType.Long => WriteLongAsync(((LongTag)tag).Value, cancellationToken),
             NbtTagType.Float => WriteFloatAsync(((FloatTag)tag).Value, cancellationToken),
             NbtTagType.Double => WriteDoubleAsync(((DoubleTag)tag).Value, cancellationToken),

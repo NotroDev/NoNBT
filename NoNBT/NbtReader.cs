@@ -26,7 +26,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         {
             NbtTagType.Byte => new ByteTag(name, (byte)ReadByteChecked()),
             NbtTagType.Short => new ShortTag(name, ReadShort()),
-            NbtTagType.Int => new NbtInt(name, ReadInt()),
+            NbtTagType.Int => new IntTag(name, ReadInt()),
             NbtTagType.Long => new LongTag(name, ReadLong()),
             NbtTagType.Float => new FloatTag(name, ReadFloat()),
             NbtTagType.Double => new DoubleTag(name, ReadDouble()),
@@ -59,7 +59,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             {
                 NbtTagType.Byte => new ByteTag(null, (byte)ReadByteChecked()),
                 NbtTagType.Short => new ShortTag(null, ReadShort()),
-                NbtTagType.Int => new NbtInt(null, ReadInt()),
+                NbtTagType.Int => new IntTag(null, ReadInt()),
                 NbtTagType.Long => new LongTag(null, ReadLong()),
                 NbtTagType.Float => new FloatTag(null, ReadFloat()),
                 NbtTagType.Double => new DoubleTag(null, ReadDouble()),
@@ -206,7 +206,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         {
             NbtTagType.Byte => new ByteTag(name, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.Short => new ShortTag(name, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Int => new NbtInt(name, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Int => new IntTag(name, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.Long => new LongTag(name, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.Float => new FloatTag(name, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
             NbtTagType.Double => new DoubleTag(name, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
@@ -238,7 +238,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             {
                 NbtTagType.Byte => new ByteTag(null, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.Short => new ShortTag(null, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Int => new NbtInt(null, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Int => new IntTag(null, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.Long => new LongTag(null, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.Float => new FloatTag(null, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
                 NbtTagType.Double => new DoubleTag(null, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),

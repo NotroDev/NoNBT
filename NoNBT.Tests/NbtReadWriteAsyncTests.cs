@@ -41,7 +41,7 @@ public class NbtReadWriteAsyncTests
     [TestMethod]
     public async Task TestIntTagAsync()
     {
-        (NbtInt? original, NbtInt? read) = await ReadWriteTagAsync(new NbtInt("TestInt", 1234567890));
+        (IntTag? original, IntTag? read) = await ReadWriteTagAsync(new IntTag("TestInt", 1234567890));
         AssertTagEquals(original, read);
     }
 
@@ -130,9 +130,9 @@ public class NbtReadWriteAsyncTests
     {
         var list = new ListTag("TestListInt", NbtTagType.Int)
         {
-            new NbtInt(null, 1),
-            new NbtInt(null, 2),
-            new NbtInt(null, 3)
+            new IntTag(null, 1),
+            new IntTag(null, 2),
+            new IntTag(null, 3)
         };
         (ListTag? original, ListTag? read) = await ReadWriteTagAsync(list);
         AssertTagEquals(original, read);
@@ -170,14 +170,14 @@ public class NbtReadWriteAsyncTests
         var c1 = new CompoundTag(null)
         {
             new StringTag("ItemName", "First"),
-            new NbtInt("ItemValue", 10)
+            new IntTag("ItemValue", 10)
         };
         list.Add(c1);
 
         var c2 = new CompoundTag(null)
         {
             new StringTag("ItemName", "Second"),
-            new NbtInt("ItemValue", 20)
+            new IntTag("ItemValue", 20)
         };
         list.Add(c2);
 
@@ -210,7 +210,7 @@ public class NbtReadWriteAsyncTests
     [TestMethod]
     public async Task TestCompoundTag_NestedAsync()
     {
-        var root = new CompoundTag("Root") { new NbtInt("RootInt", 100) };
+        var root = new CompoundTag("Root") { new IntTag("RootInt", 100) };
 
         var nested = new CompoundTag("Nested") { new FloatTag("NestedFloat", 3.14f) };
 
@@ -233,7 +233,7 @@ public class NbtReadWriteAsyncTests
     {
         var root = new CompoundTag("Level")
         {
-            new NbtInt("intTest", int.MaxValue),
+            new IntTag("intTest", int.MaxValue),
             new ByteTag("byteTest", byte.MaxValue),
             new StringTag("stringTest", "HELLO WORLD THIS IS A TEST STRING ÅÄÖ!"),
             new DoubleTag("doubleTest", 0.49312871321823148d),

@@ -1,19 +1,19 @@
 ﻿namespace NoNBT.Tags;
 
-public class NbtInt(string? name, int value) : NbtTag(name)
+public class IntTag(string? name, int value) : NbtTag(name)
 {
     public override NbtTagType TagType => NbtTagType.Int;
     
     public int Value { get; set; } = value;
     
-    public NbtInt(int value) : this(null, value) { }
+    public IntTag(int value) : this(null, value) { }
 
     public override NbtTag Clone()
     {
-        return new NbtInt(Name, Value);
+        return new IntTag(Name, Value);
     }
 
-    public static explicit operator int(NbtInt tag) => tag.Value;
+    public static explicit operator int(IntTag tag) => tag.Value;
 
     public override string ToString()
     {
