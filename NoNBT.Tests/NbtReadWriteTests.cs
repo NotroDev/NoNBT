@@ -49,7 +49,6 @@ public class NbtReadWriteTests
                 for (var i = 0; i < expectedList.Count; i++)
                 {
                     NbtTag expectedElement = expectedList[i];
-                    expectedElement.Name = null;
                     AssertTagEquals(expectedElement, actualList[i]);
                 }
 
