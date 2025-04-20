@@ -15,7 +15,7 @@ While NoNBT isn't designed to be a comprehensive NBT library, it covers all the 
 
 There is **no** SNBT (Stringified NBT) support in this library. If you need to parse SNBT, consider using a different library or implement it yourself.
 
-## Features
+## Capabilities
 *   **Read & Write NBT Data:** Supports reading from and writing to streams.
 *   **Full Tag Support:** Implements all standard NBT tags:
     *   `TAG_End` (handled implicitly)
