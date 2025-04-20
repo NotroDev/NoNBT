@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Buffers;
+using System.Net;
 using NoNBT.Tags;
 
 namespace NoNBT;
@@ -257,14 +258,20 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         byte[] bytes = BitConverter.GetBytes(networkValue);
         return WriteAsync(bytes, cancellationToken);
     }
-
-    private static readonly ThreadLocal<byte[]> SingleByteBuffer = new(() => new byte[1]);
-    public ValueTask WriteByteAsync(byte value, CancellationToken cancellationToken = default)
+    
+    public async ValueTask WriteByteAsync(byte value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = SingleByteBuffer.Value!;
-        buffer[0] = value;
-        return WriteAsync(buffer.AsMemory(0, 1), cancellationToken);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
+        try
+        {
+            buffer[0] = value;
+            await WriteAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     public ValueTask WriteAsync(byte[] data, CancellationToken cancellationToken = default) => WriteAsync(data.AsMemory(), cancellationToken);
