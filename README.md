@@ -13,7 +13,7 @@ NoNBT is a lightweight, straightforward .NET library for reading and writing Min
 
 While NoNBT isn't designed to be a comprehensive NBT library, it covers all the essentials you need for basic NBT operations with minimal overhead. I built it because I needed something reliable and focused for my own projects.
 
-There is **NO** SNBT (Stringified NBT) support in this library. If you need to parse SNBT, consider using a different library or implement it yourself.
+There is **no** SNBT (Stringified NBT) support in this library. If you need to parse SNBT, consider using a different library or implement it yourself.
 
 ## Features
 *   **Read & Write NBT Data:** Supports reading from and writing to streams.
@@ -53,7 +53,8 @@ dotnet add package NoNBT
 
 ```
 
-*Note: `NbtReader` expects a raw, decompressed NBT stream. You need to handle GZip/ZLib decompression *before* passing the stream.*
+> [!NOTE]  
+> `NbtReader` expects a raw, decompressed NBT stream. You need to handle GZip/ZLib decompression *before* passing the stream.
 
 ### Writing NBT Data
 
@@ -61,7 +62,8 @@ dotnet add package NoNBT
 
 ```
 
-*Note: `NbtWriter` writes raw NBT data. Apply GZip/ZLib compression *after* writing if needed.*
+> [!NOTE]
+> `NbtWriter` writes raw NBT data. Apply GZip/ZLib compression *after* writing if needed.*
 
 ## Supported NBT Tag Types
 
