@@ -1,8 +1,25 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
 namespace NoNBT;
+
+/// <summary>
+/// Provides methods for encoding and decoding strings using the Modified UTF-8 encoding format.
+/// </summary>
+/// <remarks>
+/// Modified UTF-8 is a variation of the standard UTF-8 encoding used in NBT.
+/// This encoding differs from standard UTF-8 in that it uses two-byte sequences
+/// to encode the null character (U+0000) instead of the single byte used in standard UTF-8.
+/// </remarks>
 public static class ModifiedUtf8
 {
+    /// Encodes a given string into a byte array using a modified UTF-8 encoding.
+    /// The encoding differs from standard UTF-8 in that the null character ('\0')
+    /// is encoded as two bytes (0xC0, 0x80). It also ensures that the resulting
+    /// byte array does not exceed the maximum length specified for NBT data.
+    /// Throws an exception if the encoded byte length exceeds the permitted maximum.
+    /// <param name="str">The string to be encoded into a modified UTF-8 byte array.</param>
+    /// <returns>A byte array containing the modified UTF-8 encoded representation of the input string.</returns>
+    /// <exception cref="FormatException">Thrown when the encoded string length exceeds the maximum allowable byte size.</exception>
     public static byte[] GetBytes(string str)
     {
         if (string.IsNullOrEmpty(str))
@@ -56,7 +73,12 @@ public static class ModifiedUtf8
         }
         return bytes;
     }
-    
+
+    /// Decodes a byte array encoded in the Modified UTF-8 format into its string representation.
+    /// Throws an exception if the input byte array contains invalid Modified UTF-8 data.
+    /// <param name="bytes">The byte span containing the Modified UTF-8 encoded data to decode.</param>
+    /// <returns>A string that represents the decoded value from the Modified UTF-8 byte array.</returns>
+    /// <exception cref="FormatException">Thrown when the input byte array contains invalid Modified UTF-8 data.</exception>
     public static string GetString(ReadOnlySpan<byte> bytes)
     {
         if (TryGetString(bytes, out string? result))
@@ -65,7 +87,14 @@ public static class ModifiedUtf8
         }
         throw new FormatException("Input data contained invalid Modified UTF-8 bytes.");
     }
-    
+
+    /// Tries to decode a sequence of bytes encoded using the Modified UTF-8 format into a string.
+    /// Returns a boolean indicating whether the operation succeeded or failed.
+    /// If successful, the decoded string is assigned to the output parameter; otherwise, the output parameter is set to null.
+    /// This method ensures that input data is validated to conform to the Modified UTF-8 encoding standard.
+    /// <param name="bytes">The span of bytes to decode using the Modified UTF-8 format.</param>
+    /// <param name="value">When this method returns, contains the decoded string if the operation was successful, or null if it failed.</param>
+    /// <returns>True if the byte sequence was successfully decoded into a string; otherwise, false.</returns>
     public static bool TryGetString(ReadOnlySpan<byte> bytes, [NotNullWhen(true)] out string? value)
     {
         if (bytes.IsEmpty)

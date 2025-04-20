@@ -1,5 +1,9 @@
 ﻿namespace NoNBT;
 
+/// <summary>
+/// Represents the different types of NBT data.
+/// Used to indicate the type of data stored within an NBT tag.
+/// </summary>
 public enum NbtTagType : byte
 {
     End = 0,

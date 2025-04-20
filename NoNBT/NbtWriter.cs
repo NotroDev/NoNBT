@@ -4,11 +4,43 @@ using NoNBT.Tags;
 
 namespace NoNBT;
 
+/// <summary>
+/// Provides functionality for writing NBT data to a stream.
+/// Supports both synchronous and asynchronous operations for encoding and
+/// emitting NBT tags, ensuring proper formatting and structure compatibility
+/// based on the NBT specification.
+/// </summary>
+/// <remarks>
+/// This class is used to serialize and write NBT data including primitives (e.g., integers, floats, strings)
+/// and complex tag structures to a specified stream.
+/// It ensures compliance with data representation and ordering requirements of the NBT format.
+/// </remarks>
+/// <example>
+/// To use this class, instantiate it with a writable <see cref="Stream"/> and write NBT tags using the
+/// provided methods like <see cref="WriteTag"/>, <see cref="WriteInt"/>, <see cref="WriteString"/>,
+/// etc., optionally leveraging asynchronous alternatives.
+/// </example>
+/// <threadsafety>
+/// Any individual instance of <see cref="NbtWriter"/> is not thread-safe. Concurrent access by multiple
+/// threads to the same instance needs to be coordinated externally to avoid unexpected behavior.
+/// </threadsafety>
+/// <exception cref="ObjectDisposedException">
+/// Raised when attempting to perform operations on a disposed instance.
+/// </exception>
+/// <exception cref="ArgumentException">
+/// Thrown if certain arguments provided to methods do not meet expected criteria, such as invalid NBT tag
+/// types or values.
+/// </exception>
 public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAsyncDisposable
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private bool _disposed;
-    
+
+    /// Writes an NBT to the underlying stream.
+    /// <param name="tag">The NBT tag to write. The tag must not be of type End, as it is written automatically at the end of a compound tag.</param>
+    /// <param name="named">Indicates whether the tag is named. When set to true, the tag's name will be included in the output.</param>
+    /// <exception cref="ArgumentException">Thrown if the tag is of type End.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteTag(NbtTag tag, bool named = true)
     {
         CheckDisposed();
@@ -80,6 +112,10 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         foreach (long value in tag.Value) WriteLong(value);
     }
 
+    /// Writes a string value to the underlying stream in the Modified UTF-8 format.
+    /// <param name="value">The string value to write. The length of the string in bytes must not exceed the maximum value of a signed short (32767).</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the byte length of the string exceeds the maximum allowed length (32767 bytes).</exception>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteString(string value)
     {
         CheckDisposed();
@@ -90,6 +126,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(stringBytes);
     }
 
+    /// Writes a 32-bit signed integer to the underlying stream in network byte order.
+    /// <param name="value">The integer value to write to the stream.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteInt(int value)
     {
         CheckDisposed();
@@ -98,6 +137,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(bytes);
     }
 
+    /// Writes a single-precision floating-point value to the underlying stream.
+    /// <param name="value">The single-precision floating-point value to write.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteFloat(float value)
     {
         CheckDisposed();
@@ -105,6 +147,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(bytes);
     }
 
+    /// Writes a double-precision floating-point number to the underlying stream.
+    /// <param name="value">The double-precision floating-point value to write.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteDouble(double value)
     {
         CheckDisposed();
@@ -112,6 +157,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(bytes);
     }
 
+    /// Writes a short value to the underlying stream in big-endian byte order.
+    /// <param name="value">The short value to write.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteShort(short value)
     {
         CheckDisposed();
@@ -120,6 +168,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(bytes);
     }
 
+    /// Writes a 64-bit signed integer to the underlying stream in network byte order.
+    /// <param name="value">The 64-bit signed integer to write.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteLong(long value)
     {
         CheckDisposed();
@@ -128,18 +179,32 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         Write(bytes);
     }
 
+    /// Writes a single byte to the underlying stream.
+    /// <param name="value">The byte value to write to the stream.</param>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public void WriteByte(byte value)
     {
         CheckDisposed();
         _stream.WriteByte(value);
     }
 
+    /// Writes the specified byte array to the underlying stream.
+    /// <param name="data">The data to write to the stream. Must not be null and must have a length greater than zero.</param>
+    /// <exception cref="ObjectDisposedException">Thrown when the underlying stream has already been disposed.</exception>
     public void Write(byte[] data)
     {
         CheckDisposed();
         if (data.Length > 0) _stream.Write(data, 0, data.Length);
     }
-    
+
+    /// Asynchronously writes an NBT tag to the underlying stream.
+    /// <param name="tag">The NBT tag to write. The tag must not be of type End, as it is written automatically at the end of a compound tag.</param>
+    /// <param name="named">Indicates whether the tag is named. When set to true, the tag's name will be included in the output.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A task that represents the asynchronous write operation.</returns>
+    /// <exception cref="ArgumentException">Thrown if the tag is of type End.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if the tag is named but its name is null.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public async ValueTask WriteTagAsync(NbtTag tag, bool named = true, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -211,6 +276,13 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         foreach (long value in tag.Value) await WriteLongAsync(value, cancellationToken).ConfigureAwait(false);
     }
 
+    /// Writes a string to the underlying stream in Modified UTF-8 format.
+    /// <param name="value">The string value to write. The string is encoded in Modified UTF-8 and its length in bytes must not exceed the maximum allowed length.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A task representing the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if the provided string is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the encoded string length in bytes exceeds the maximum allowed length.</exception>
     public async ValueTask WriteStringAsync(string value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -221,6 +293,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         await WriteAsync(stringBytes, cancellationToken).ConfigureAwait(false);
     }
 
+    /// Asynchronously writes a 32-bit integer to the underlying stream in network byte order.
+    /// <param name="value">The 32-bit integer value to write.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A ValueTask that represents the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteIntAsync(int value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -229,6 +306,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return WriteAsync(bytes, cancellationToken);
     }
 
+    /// Writes a single-precision floating-point number (float) to the underlying stream asynchronously.
+    /// <param name="value">The floating-point value to write.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A ValueTask that represents the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteFloatAsync(float value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -236,6 +318,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return WriteAsync(bytes, cancellationToken);
     }
 
+    /// Asynchronously writes a double value to the underlying stream in network byte order.
+    /// <param name="value">The double value to write.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteDoubleAsync(double value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -243,6 +330,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return WriteAsync(bytes, cancellationToken);
     }
 
+    /// Writes a 16-bit signed integer to the underlying stream in network byte order asynchronously.
+    /// <param name="value">The 16-bit signed integer value to write.</param>
+    /// <param name="cancellationToken">The cancellation token to monitor for cancellation requests.</param>
+    /// <returns>A ValueTask that represents the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteShortAsync(short value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -251,6 +343,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return WriteAsync(bytes, cancellationToken);
     }
 
+    /// Writes a long integer to the underlying stream asynchronously in network byte order.
+    /// <param name="value">The long integer value to write.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteLongAsync(long value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -258,7 +355,13 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         byte[] bytes = BitConverter.GetBytes(networkValue);
         return WriteAsync(bytes, cancellationToken);
     }
-    
+
+    /// Writes a single byte asynchronously to the underlying stream.
+    /// <param name="value">The byte value to write to the stream.</param>
+    /// <param name="cancellationToken">The token to monitor for cancellation requests.</param>
+    /// <returns>A task that represents the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if the underlying stream does not support writing.</exception>
     public async ValueTask WriteByteAsync(byte value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -274,8 +377,19 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         }
     }
 
+    /// Writes the specified data asynchronously to the underlying stream.
+    /// <param name="data">The byte array to write to the stream.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task representing the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via the provided cancellation token.</exception>
     public ValueTask WriteAsync(byte[] data, CancellationToken cancellationToken = default) => WriteAsync(data.AsMemory(), cancellationToken);
 
+    /// Writes the specified data to the underlying stream asynchronously.
+    /// <param name="data">The data to write to the stream, represented as a read-only memory block of bytes.</param>
+    /// <param name="cancellationToken">The token to monitor for cancellation requests.</param>
+    /// <returns>A value task that represents the asynchronous write operation.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
@@ -301,12 +415,20 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return BitConverter.ToSingle(bytes, 0);
     }
 
+    /// Releases all resources used by the NbtWriter instance.
+    /// Ensures that any resources allocated by the writer, such as the underlying stream, are properly released.
+    /// If the `leaveOpen` parameter in the constructor is false, the underlying stream will also be closed.
+    /// After calling this method, the NbtWriter instance should no longer be used.
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
+    /// Asynchronously releases the unmanaged and optionally the managed resources used by the NbtWriter.
+    /// Ensures that all pending asynchronous operations are completed before the object is disposed.
+    /// Should be called when the NbtWriter instance is no longer needed.
+    /// <returns>A ValueTask that represents the asynchronous dispose operation.</returns>
     public async ValueTask DisposeAsync()
     {
         await DisposeAsyncCore().ConfigureAwait(false);
@@ -314,6 +436,8 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         GC.SuppressFinalize(this);
     }
 
+    /// Releases the unmanaged resources used by the NbtWriter and optionally releases the managed resources.
+    /// <param name="disposing">Indicates whether to release both managed and unmanaged resources (true) or only unmanaged resources (false).</param>
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed) return;
@@ -327,6 +451,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         _disposed = true;
     }
 
+    /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources asynchronously.
+    /// This method can be overridden in a derived class to provide custom asynchronous disposal logic.
+    /// <return>A ValueTask that represents the asynchronous dispose operation.</return>
     protected virtual async ValueTask DisposeAsyncCore()
     {
         if (_disposed) return;
