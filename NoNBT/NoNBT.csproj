@@ -5,7 +5,26 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
+        <PackageId>NoNBT</PackageId>
         <Version>1.0.2</Version>
+        <Authors>NotroDev</Authors>
+        <Description>A lightweight and straightforward .NET library for reading and writing Minecraft's Named Binary Tag (NBT) data format. Supports all standard NBT tags and Modified UTF-8 encoding.</Description>
+        <PackageTags>nbt;minecraft;named binary tag;serialization;binary;data;parser;writer;nonbt</PackageTags>
+
+        <PackageProjectUrl>https://github.com/NotroDev/NoNBT</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/NotroDev/NoNBT.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+        <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\"/>
+    </ItemGroup>
 	
 </Project>
