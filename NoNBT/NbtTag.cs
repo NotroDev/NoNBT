@@ -1,36 +1,41 @@
 ﻿namespace NoNBT;
 
 /// <summary>
-/// Represents the base class for all NBT types.
+/// Represents the base class for all NBT tags.
 /// </summary>
+/// <param name="name">The optional name of the tag.</param>
 public abstract class NbtTag(string? name)
 {
     /// <summary>
-    /// Gets the name of the NBT tag. It can be null if no name is assigned.
+    /// Gets the optional name of the tag.
     /// </summary>
     public string? Name { get; init; } = name;
-
+    
     /// <summary>
-    /// Gets the specific type of the NBT tag, represented as an <see cref="NbtTagType"/>.
-    /// This property is implemented by derived classes to indicate their respective NBT tag type.
+    /// Gets the type of this NBT tag.
     /// </summary>
     public abstract NbtTagType TagType { get; }
-
+    
     /// <summary>
-    /// Creates a deep copy of the current NBT tag and its associated data.
+    /// Creates a deep copy of this tag.
     /// </summary>
-    /// <returns>A new <see cref="NbtTag"/> instance that is a deep copy of the current tag.</returns>
+    /// <returns>A new NBT tag that is a copy of this instance.</returns>
     public abstract NbtTag Clone();
-
+    
     /// <summary>
-    /// Returns a string representation of the current NBT tag, including its type and name.
+    /// Returns a string representation of this tag.
     /// </summary>
-    /// <returns>A string that represents the NBT tag with its type and name.</returns>
+    /// <returns>A string representing this tag, including its type and name.</returns>
     public override string ToString()
     {
         return $"[{TagType}] {Name ?? "''"}";
     }
     
+    /// <summary>
+    /// Escapes special characters in a string for JSON representation.
+    /// </summary>
+    /// <param name="s">The string to escape.</param>
+    /// <returns>The escaped string.</returns>
     protected static string EscapeString(string s)
     {
         if (s == null) return "null";
@@ -61,20 +66,29 @@ public abstract class NbtTag(string? name)
         }
         return sb.ToString();
     }
-
+    
     /// <summary>
-    /// Converts the current NBT tag and its associated data to a JSON-formatted string representation.
-    /// Useful for debugging or testing purposes, not for serialization.
+    /// Converts this tag to a JSON string representation.
     /// </summary>
-    /// <param name="indentLevel">The level of indentation applied to the JSON output. Default is 0.</param>
-    /// <returns>A JSON-formatted string representation of the current NBT tag.</returns>
+    /// <param name="indentLevel">The indentation level for formatting.</param>
+    /// <returns>A JSON string representing this tag.</returns>
     public abstract string ToJson(int indentLevel = 0);
 
+    /// <summary>
+    /// Gets the indentation string for a given level.
+    /// </summary>
+    /// <param name="indentLevel">The desired indentation level (number of tab equivalents).</param>
+    /// <returns>A string consisting of spaces representing the indentation.</returns>
     protected static string GetIndent(int indentLevel)
     {
         return new string(' ', indentLevel * 2);
     }
 
+    /// <summary>
+    /// Formats the tag's name into a JSON property string (e.g., "TagName": ).
+    /// </summary>
+    /// <param name="requireQuotes">Whether to always enclose the name in quotes (standard JSON behavior). If false, only special characters might be escaped.</param>
+    /// <returns>The formatted property name string, or an empty string if the tag has no name.</returns>
     protected string FormatPropertyName(bool requireQuotes = true)
     {
         if (string.IsNullOrEmpty(Name)) return "";
