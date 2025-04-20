@@ -10,7 +10,9 @@ public class ByteArrayTag(string? name, byte[] value) : NbtTag(name)
 
     public override NbtTag Clone()
     {
-        return new ByteArrayTag(Name, Value);
+        var clonedValue = new byte[Value.Length];
+        Value.CopyTo(clonedValue, 0);
+        return new ByteArrayTag(Name, clonedValue);
     }
 
     public static explicit operator byte[](ByteArrayTag tag) => tag.Value;

@@ -10,7 +10,9 @@ public class LongArrayTag(string? name, long[] value) : NbtTag(name)
 
     public override NbtTag Clone()
     {
-        return new LongArrayTag(Name, Value);
+        var clonedValue = new long[Value.Length];
+        Value.CopyTo(clonedValue, 0);
+        return new LongArrayTag(Name, clonedValue);
     }
 
     public static explicit operator long[](LongArrayTag tag) => tag.Value;

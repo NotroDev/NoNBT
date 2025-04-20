@@ -10,7 +10,9 @@ public class IntArrayTag(string? name, int[] value) : NbtTag(name)
 
     public override NbtTag Clone()
     {
-        return new IntArrayTag(Name, Value);
+        var clonedValue = new int[Value.Length];
+        Value.CopyTo(clonedValue, 0);
+        return new IntArrayTag(Name, clonedValue);
     }
 
     public static explicit operator int[](IntArrayTag tag) => tag.Value;
