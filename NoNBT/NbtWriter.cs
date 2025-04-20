@@ -463,5 +463,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         }
     }
 
+    /// <summary>
+    /// Implements the finalizer method for the NbtWriter, ensuring that unmanaged resources are released if <see cref="Dispose()"/> is not explicitly called.
+    /// </summary>
+    /// <remarks>
+    /// This method is called by the garbage collector. It invokes the <see cref="Dispose(bool)"/> method with the <c>disposing</c> parameter set to <c>false</c>.
+    /// </remarks>
     ~NbtWriter() => Dispose(false);
 }

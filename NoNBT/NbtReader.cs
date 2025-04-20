@@ -842,6 +842,14 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Releases all resources used by the <see cref="NbtReader"/> instance.
+    /// </summary>
+    /// <param name="disposing">
+    /// A boolean indicating whether the method is being called from a Dispose method
+    /// (true) or from a finalizer (false). If true, managed resources should be released
+    /// and finalization suppressed. If false, only unmanaged resources should be released.
+    /// </param>
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed) return;
@@ -869,6 +877,12 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             await _stream.DisposeAsync().ConfigureAwait(false);
         }
     }
-
+    
+    /// <summary>
+    /// Implements the finalizer method for the NbtReader, ensuring that unmanaged resources are released if <see cref="Dispose()"/> is not explicitly called.
+    /// </summary>
+    /// <remarks>
+    /// This method is called by the garbage collector. It invokes the <see cref="Dispose(bool)"/> method with the <c>disposing</c> parameter set to <c>false</c>.
+    /// </remarks>
     ~NbtReader() => Dispose(false);
 }
