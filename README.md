@@ -93,7 +93,7 @@ public void WriteTextComponent(TextComponent? component)
 ```
 
 > [!NOTE]
-> `NbtWriter` writes raw NBT data. Apply GZip/ZLib compression *after* writing if needed.*
+> `NbtWriter` writes raw NBT data. Apply GZip/ZLib compression *after* writing if needed.
 
 ## Supported NBT Tag Types
 
