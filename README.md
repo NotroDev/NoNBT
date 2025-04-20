@@ -54,15 +54,15 @@ using var reader = new NbtReader(stream);
 
 NbtTag? tag = reader.ReadTag();
 
-if (tag is NbtCompound rootTag)
+if (tag is CompoundTag rootTag)
 {
-    string? name = rootTag.Get<NbtString>("name")?.Value;
-    int? score = rootTag.Get<NbtInt>("score")?.Value;
+    string? name = rootTag.Get<StringTag>("name")?.Value;
+    int? score = rootTag.Get<IntTag>("score")?.Value;
     Console.WriteLine($"Player {name} has score {score}");
 }
 
 // or use the indexer
-string? name = (rootTag["name"] as NbtString)?.Value;
+string? name = (rootTag["name"] as StringTag)?.Value;
 ```
 
 > [!NOTE]  
@@ -73,12 +73,12 @@ string? name = (rootTag["name"] as NbtString)?.Value;
 ```csharp
 using var writer = new NbtWriter(stream);
 
-writer.WriteTag(new NbtString("message", "Hello, World!"));
+writer.WriteTag(new StringTag("message", "Hello, World!"));
 
-var compound = new NbtCompound("root")
+var compound = new CompoundTag("root")
 {
-    new NbtString("name", "Player1"),
-    new NbtInt("score", 42)
+    new StringTag("name", "Player1"),
+    new IntTag("score", 42)
 };
 writer.WriteTag(compound);
 
@@ -87,7 +87,7 @@ public void WriteTextComponent(TextComponent? component)
     if (component == null) return;
     using NbtWriter writer = new(this);
 
-    NbtCompound tag = component.ToNbt();
+    CompoundTag tag = component.ToNbt();
     writer.WriteTag(tag, false); // text component root tag is unnamed
 }
 ```
@@ -99,16 +99,16 @@ public void WriteTextComponent(TextComponent? component)
 
 The library fully supports the standard NBT tag types via the `NbtTagType` enum and corresponding classes in the `NoNBT.Tags` namespace:
 
-*   `End` = 0 (Implicitly handled by `NbtCompound` and `NbtReader`)
-*   `Byte` = 1 (`NbtByte`)
-*   `Short` = 2 (`NbtShort`)
-*   `Int` = 3 (`NbtInt`)
-*   `Long` = 4 (`NbtLong`)
-*   `Float` = 5 (`NbtFloat`)
-*   `Double` = 6 (`NbtDouble`)
-*   `ByteArray` = 7 (`NbtByteArray`)
-*   `String` = 8 (`NbtString`)
-*   `List` = 9 (`NbtList`)
-*   `Compound` = 10 (`NbtCompound`)
-*   `IntArray` = 11 (`NbtIntArray`)
-*   `LongArray` = 12 (`NbtLongArray`)
+*   `End` = 0 (Implicitly handled by `CompoundTag` and `NbtReader`)
+*   `Byte` = 1 (`ByteTag`)
+*   `Short` = 2 (`ShortTag`)
+*   `Int` = 3 (`IntTag`)
+*   `Long` = 4 (`LongTag`)
+*   `Float` = 5 (`FloatTag`)
+*   `Double` = 6 (`DoubleTag`)
+*   `ByteArray` = 7 (`ByteArrayTag`)
+*   `String` = 8 (`StringTag`)
+*   `List` = 9 (`ListTag`)
+*   `Compound` = 10 (`CompoundTag`)
+*   `IntArray` = 11 (`IntArrayTag`)
+*   `LongArray` = 12 (`LongArrayTag`)
