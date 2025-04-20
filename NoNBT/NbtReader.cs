@@ -1,15 +1,17 @@
 ﻿using System.Buffers;
 using System.Net;
-using System.Text;
 using NoNBT.Tags;
 
 namespace NoNBT;
 
 public class NbtReader(Stream stream) : IDisposable
 {
+    private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    private bool _disposed;
+
     public NbtTag? ReadTag(bool named = true)
     {
-        var tagType = (NbtTagType)stream.ReadByte();
+        var tagType = (NbtTagType)_stream.ReadByte();
         if (tagType == NbtTagType.End)
             return null;
 
@@ -22,7 +24,7 @@ public class NbtReader(Stream stream) : IDisposable
         
         NbtTag tag = tagType switch
         {
-            NbtTagType.Byte => new NbtByte(name, (byte)stream.ReadByte()),
+            NbtTagType.Byte => new NbtByte(name, (byte)_stream.ReadByte()),
             NbtTagType.Short => new NbtShort(name, ReadShort()),
             NbtTagType.Int => new NbtInt(name, ReadInt()),
             NbtTagType.Long => new NbtLong(name, ReadLong()),
@@ -41,9 +43,9 @@ public class NbtReader(Stream stream) : IDisposable
         return tag;
     }
 
-    private NbtList ReadListTag(string name)
+    private NbtList ReadListTag(string? name)
     {
-        var listType = (NbtTagType)stream.ReadByte();
+        var listType = (NbtTagType)_stream.ReadByte();
         int count = ReadInt();
         var list = new NbtList(name, listType);
 
@@ -52,7 +54,7 @@ public class NbtReader(Stream stream) : IDisposable
             switch (listType)
             {
                 case NbtTagType.Byte:
-                    list.Add(new NbtByte(null, (byte)stream.ReadByte()));
+                    list.Add(new NbtByte(null, (byte)_stream.ReadByte()));
                     break;
                 case NbtTagType.Short:
                     list.Add(new NbtShort(null, ReadShort()));
@@ -96,7 +98,7 @@ public class NbtReader(Stream stream) : IDisposable
         return list;
     }
 
-    private NbtCompound ReadCompoundTag(string name)
+    private NbtCompound ReadCompoundTag(string? name)
     {
         var compound = new NbtCompound(name);
         
@@ -155,7 +157,7 @@ public class NbtReader(Stream stream) : IDisposable
     public int ReadInt()
     {
         var dat = new byte[4];
-        stream.ReadExactly(dat, 0, 4);
+        _stream.ReadExactly(dat, 0, 4);
         var value = BitConverter.ToInt32(dat, 0);
         return IPAddress.NetworkToHostOrder(value);
     }
@@ -188,7 +190,7 @@ public class NbtReader(Stream stream) : IDisposable
     
     public int ReadByte()
     {
-        return stream.ReadByte();
+        return _stream.ReadByte();
     }
     
     public byte[] Read(int length)
@@ -201,7 +203,7 @@ public class NbtReader(Stream stream) : IDisposable
             var totalRead = 0;
             while (totalRead < length)
             {
-                int bytesRead = stream.Read(buffer, totalRead, length - totalRead);
+                int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
                 if (bytesRead <= 0) break;
                 totalRead += bytesRead;
             }
@@ -262,8 +264,24 @@ public class NbtReader(Stream stream) : IDisposable
     
     public void Dispose()
     {
-        return;
-        
+        Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    protected void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        
+        if (disposing)
+        {
+            _stream?.Dispose(); 
+        }
+            
+        _disposed = true;
+    }
+    
+    ~NbtReader()
+    {
+        Dispose(false);
     }
 }

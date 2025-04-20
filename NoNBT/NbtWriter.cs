@@ -1,27 +1,25 @@
 ﻿using System.Net;
-using System.Text;
 using NoNBT.Tags;
 
 namespace NoNBT;
 
 public class NbtWriter(Stream stream) : IDisposable
 {
+    private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    private bool _disposed;
+
     public void WriteTag(NbtTag tag, bool named = true)
     {
         if (tag.TagType == NbtTagType.End)
             throw new ArgumentException("Cannot write TAG_End directly. It is written automatically at the end of a TAG_Compound.");
 
-        stream.WriteByte((byte)tag.TagType);
+        _stream.WriteByte((byte)tag.TagType);
 
         if (named)
         {
             if (tag.Name == null)
-                throw new ArgumentNullException(nameof(tag.Name), "Named tag cannot have a null name.");
+                throw new ArgumentNullException(nameof(tag), "Tag name cannot be null when writing a named tag.");
             WriteString(tag.Name);
-        }
-        else if (tag.Name != null)
-        {
-            
         }
 
         WriteTagPayload(tag);
@@ -32,7 +30,7 @@ public class NbtWriter(Stream stream) : IDisposable
         switch (tag.TagType)
         {
             case NbtTagType.Byte:
-                stream.WriteByte(((NbtByte)tag).Value);
+                _stream.WriteByte(((NbtByte)tag).Value);
                 break;
             case NbtTagType.Short:
                 WriteShort(((NbtShort)tag).Value);
@@ -76,7 +74,7 @@ public class NbtWriter(Stream stream) : IDisposable
 
     private void WriteListPayload(NbtList tag)
     {
-        stream.WriteByte((byte)tag.ListType);
+        _stream.WriteByte((byte)tag.ListType);
         WriteInt(tag.Count);
 
         foreach (NbtTag item in tag)
@@ -91,7 +89,7 @@ public class NbtWriter(Stream stream) : IDisposable
         {
             WriteTag(childTagPair.Value);
         }
-        stream.WriteByte((byte)NbtTagType.End);
+        _stream.WriteByte((byte)NbtTagType.End);
     }
 
     private void WriteByteArrayPayload(NbtByteArray tag)
@@ -163,14 +161,14 @@ public class NbtWriter(Stream stream) : IDisposable
 
     public void WriteByte(byte value)
     {
-        stream.WriteByte(value);
+        _stream.WriteByte(value);
     }
 
     public void Write(byte[] data)
     {
         if (data.Length > 0)
         {
-            stream.Write(data, 0, data.Length);
+            _stream.Write(data, 0, data.Length);
         }
     }
 
@@ -192,6 +190,24 @@ public class NbtWriter(Stream stream) : IDisposable
 
     public void Dispose()
     {
-        return;
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        
+        if (disposing)
+        {
+            stream?.Dispose(); 
+        }
+            
+        _disposed = true;
+    }
+    
+    ~NbtWriter()
+    {
+        Dispose(false);
     }
 }
