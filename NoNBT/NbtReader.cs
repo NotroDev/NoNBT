@@ -4,27 +4,27 @@ using NoNBT.Tags;
 
 namespace NoNBT;
 
-public class NbtReader(Stream stream) : IDisposable
+public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAsyncDisposable
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private bool _disposed;
 
+    private const int MaxVarIntSize = 5;
+    
+
     public NbtTag? ReadTag(bool named = true)
     {
-        var tagType = (NbtTagType)_stream.ReadByte();
-        if (tagType == NbtTagType.End)
-            return null;
+        CheckDisposed();
+        int tagTypeByte = ReadByte();
+        if (tagTypeByte == -1) throw new EndOfStreamException("Unexpected end of stream while reading tag type.");
+        var tagType = (NbtTagType)tagTypeByte;
+        if (tagType == NbtTagType.End) return null;
 
-        string? name = null;
+        string? name = named ? ReadString() : null;
 
-        if (named)
-        {
-            name = ReadString();
-        }
-        
         NbtTag tag = tagType switch
         {
-            NbtTagType.Byte => new NbtByte(name, (byte)_stream.ReadByte()),
+            NbtTagType.Byte => new NbtByte(name, (byte)ReadByteChecked()),
             NbtTagType.Short => new NbtShort(name, ReadShort()),
             NbtTagType.Int => new NbtInt(name, ReadInt()),
             NbtTagType.Long => new NbtLong(name, ReadLong()),
@@ -36,8 +36,8 @@ public class NbtReader(Stream stream) : IDisposable
             NbtTagType.Compound => ReadCompoundTag(name),
             NbtTagType.IntArray => new NbtIntArray(name, ReadIntArray()),
             NbtTagType.LongArray => new NbtLongArray(name, ReadLongArray()),
-            NbtTagType.End => throw new InvalidOperationException("End tag should not be read"),
-            _ => throw new NotImplementedException($"Unsupported tag type: {tagType}")
+            NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
+            _ => throw new IOException($"Unsupported tag type: {tagType}")
         };
 
         return tag;
@@ -45,207 +45,390 @@ public class NbtReader(Stream stream) : IDisposable
 
     private NbtList ReadListTag(string? name)
     {
-        var listType = (NbtTagType)_stream.ReadByte();
+        CheckDisposed();
+        var listType = (NbtTagType)ReadByteChecked();
         int count = ReadInt();
+        if (count < 0) throw new IOException($"Invalid list count: {count}");
+
         var list = new NbtList(name, listType);
+        if (count == 0) return list;
 
         for (var i = 0; i < count; i++)
         {
-            switch (listType)
+            NbtTag element = listType switch
             {
-                case NbtTagType.Byte:
-                    list.Add(new NbtByte(null, (byte)_stream.ReadByte()));
-                    break;
-                case NbtTagType.Short:
-                    list.Add(new NbtShort(null, ReadShort()));
-                    break;
-                case NbtTagType.Int:
-                    list.Add(new NbtInt(null, ReadInt()));
-                    break;
-                case NbtTagType.Long:
-                    list.Add(new NbtLong(null, ReadLong()));
-                    break;
-                case NbtTagType.Float:
-                    list.Add(new NbtFloat(null, ReadFloat()));
-                    break;
-                case NbtTagType.Double:
-                    list.Add(new NbtDouble(null, ReadDouble()));
-                    break;
-                case NbtTagType.ByteArray:
-                    list.Add(new NbtByteArray(null, ReadByteArray()));
-                    break;
-                case NbtTagType.String:
-                    list.Add(new NbtString(null, ReadString()));
-                    break;
-                case NbtTagType.List:
-                    list.Add(ReadListTag(null));
-                    break;
-                case NbtTagType.Compound:
-                    list.Add(ReadCompoundTag(null));
-                    break;
-                case NbtTagType.IntArray:
-                    list.Add(new NbtIntArray(null, ReadIntArray()));
-                    break;
-                case NbtTagType.LongArray:
-                    list.Add(new NbtLongArray(null, ReadLongArray()));
-                    break;
-                case NbtTagType.End:
-                default:
-                    throw new NotImplementedException($"Unsupported list element type: {listType}");
-            }
+                NbtTagType.Byte => new NbtByte(null, (byte)ReadByteChecked()),
+                NbtTagType.Short => new NbtShort(null, ReadShort()),
+                NbtTagType.Int => new NbtInt(null, ReadInt()),
+                NbtTagType.Long => new NbtLong(null, ReadLong()),
+                NbtTagType.Float => new NbtFloat(null, ReadFloat()),
+                NbtTagType.Double => new NbtDouble(null, ReadDouble()),
+                NbtTagType.ByteArray => new NbtByteArray(null, ReadByteArray()),
+                NbtTagType.String => new NbtString(null, ReadString()),
+                NbtTagType.List => ReadListTag(null),
+                NbtTagType.Compound => ReadCompoundTag(null),
+                NbtTagType.IntArray => new NbtIntArray(null, ReadIntArray()),
+                NbtTagType.LongArray => new NbtLongArray(null, ReadLongArray()),
+                NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
+                _ => throw new IOException($"Unsupported list element type: {listType}")
+            };
+            list.Add(element);
         }
-
         return list;
     }
 
     private NbtCompound ReadCompoundTag(string? name)
     {
+        CheckDisposed();
         var compound = new NbtCompound(name);
-        
         while (true)
         {
             NbtTag? tag = ReadTag();
-            if (tag == null)
-                break;
-                
+            if (tag == null) break;
             compound.Add(tag);
         }
-        
         return compound;
     }
 
-    private byte[] ReadByteArray()
-    {
-        int length = ReadInt();
-        return Read(length);
-    }
-
+    private byte[] ReadByteArray() => Read(ReadIntCheckedLength());
     private int[] ReadIntArray()
     {
-        int length = ReadInt();
+        int length = ReadIntCheckedLength();
         var result = new int[length];
-        
-        for (var i = 0; i < length; i++)
-        {
-            result[i] = ReadInt();
-        }
-        
+        for (var i = 0; i < length; i++) result[i] = ReadInt();
         return result;
     }
 
     private long[] ReadLongArray()
     {
-        int length = ReadInt();
+        int length = ReadIntCheckedLength();
         var result = new long[length];
-        
-        for (var i = 0; i < length; i++)
-        {
-            result[i] = ReadLong();
-        }
-        
+        for (var i = 0; i < length; i++) result[i] = ReadLong();
         return result;
     }
-    
+
     public string ReadString()
     {
+        CheckDisposed();
         short length = ReadShort();
+        if (length < 0) throw new IOException($"Invalid string length: {length}");
         byte[] stringValue = Read(length);
-
         return ModifiedUtf8.GetString(stringValue);
     }
-    
+
     public int ReadInt()
     {
-        var dat = new byte[4];
-        _stream.ReadExactly(dat, 0, 4);
-        var value = BitConverter.ToInt32(dat, 0);
-        return IPAddress.NetworkToHostOrder(value);
+        CheckDisposed();
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt32(Read(sizeof(int)), 0));
     }
-    
     public float ReadFloat()
     {
-        byte[] almost = Read(4);
-        var f = BitConverter.ToSingle(almost, 0);
-        return NetworkToHostOrder(f);
+        CheckDisposed();
+        return NetworkToHostOrder(BitConverter.ToSingle(Read(sizeof(float)), 0));
     }
-    
     public double ReadDouble()
     {
-        byte[] almostValue = Read(8);
-        return NetworkToHostOrder(almostValue);
+        CheckDisposed();
+        return NetworkToHostOrder(Read(sizeof(double)));
     }
-    
     public short ReadShort()
     {
-        byte[] da = Read(2);
-        var d = BitConverter.ToInt16(da, 0);
-        return IPAddress.NetworkToHostOrder(d);
+        CheckDisposed();
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt16(Read(sizeof(short)), 0));
     }
-    
     public long ReadLong()
     {
-        byte[] l = Read(8);
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt64(l, 0));
+        CheckDisposed();
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt64(Read(sizeof(long)), 0));
     }
-    
     public int ReadByte()
     {
+        CheckDisposed();
         return _stream.ReadByte();
     }
-    
+
     public byte[] Read(int length)
     {
-        if (length == 0) return [];
+        CheckDisposed();
+        switch (length)
+        {
+            case < 0:
+                throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative.");
+            case 0:
+                return [];
+        }
 
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(length);
+        var buffer = new byte[length];
+        var totalRead = 0;
+        while (totalRead < length)
+        {
+            int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
+            if (bytesRead == 0) throw new EndOfStreamException($"Expected {length} bytes, but stream ended after {totalRead} bytes.");
+            totalRead += bytesRead;
+        }
+        return buffer;
+    }
+
+    public int ReadVarInt(out int bytesRead)
+    {
+        CheckDisposed();
+        var numRead = 0;
+        var result = 0;
+        byte readByte;
+        do
+        {
+            if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
+            int b = ReadByte();
+            if (b == -1) throw new EndOfStreamException("Stream ended while reading VarInt.");
+            readByte = (byte)b;
+
+            int value = readByte & 0x7f;
+            result |= value << (7 * numRead);
+            numRead++;
+        } while ((readByte & 0x80) != 0);
+
+        bytesRead = numRead;
+        return result;
+    }
+    public int ReadVarInt() => ReadVarInt(out int _);
+    
+
+    public async ValueTask<NbtTag?> ReadTagAsync(bool named = true, CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte tagTypeByte = await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false);
+        var tagType = (NbtTagType)tagTypeByte;
+        if (tagType == NbtTagType.End) return null;
+
+        string? name = named ? await ReadStringAsync(cancellationToken).ConfigureAwait(false) : null;
+
+        NbtTag tag = tagType switch
+        {
+            NbtTagType.Byte => new NbtByte(name, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Short => new NbtShort(name, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Int => new NbtInt(name, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Long => new NbtLong(name, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Float => new NbtFloat(name, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.Double => new NbtDouble(name, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.ByteArray => new NbtByteArray(name, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.String => new NbtString(name, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.List => await ReadListTagAsync(name, cancellationToken).ConfigureAwait(false),
+            NbtTagType.Compound => await ReadCompoundTagAsync(name, cancellationToken).ConfigureAwait(false),
+            NbtTagType.IntArray => new NbtIntArray(name, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.LongArray => new NbtLongArray(name, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
+            NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
+            _ => throw new IOException($"Unsupported tag type: {tagType}")
+        };
+        return tag;
+    }
+
+    private async ValueTask<NbtList> ReadListTagAsync(string? name, CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        var listType = (NbtTagType)await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false);
+        int count = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
+        if (count < 0) throw new IOException($"Invalid list count: {count}");
+
+        var list = new NbtList(name, listType);
+        if (count == 0) return list;
+
+        for (var i = 0; i < count; i++)
+        {
+            NbtTag element = listType switch
+            {
+                NbtTagType.Byte => new NbtByte(null, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Short => new NbtShort(null, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Int => new NbtInt(null, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Long => new NbtLong(null, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Float => new NbtFloat(null, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.Double => new NbtDouble(null, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.ByteArray => new NbtByteArray(null, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.String => new NbtString(null, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.List => await ReadListTagAsync(null, cancellationToken).ConfigureAwait(false),
+                NbtTagType.Compound => await ReadCompoundTagAsync(null, cancellationToken).ConfigureAwait(false),
+                NbtTagType.IntArray => new NbtIntArray(null, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.LongArray => new NbtLongArray(null, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
+                NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
+                _ => throw new IOException($"Unsupported list element type: {listType}")
+            };
+            list.Add(element);
+        }
+        return list;
+    }
+
+    private async ValueTask<NbtCompound> ReadCompoundTagAsync(string? name, CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        var compound = new NbtCompound(name);
+        while (true)
+        {
+            NbtTag? tag = await ReadTagAsync(true, cancellationToken).ConfigureAwait(false);
+            if (tag == null) break;
+            compound.Add(tag);
+        }
+        return compound;
+    }
+
+    private async ValueTask<byte[]> ReadByteArrayAsync(CancellationToken cancellationToken = default) => await ReadAsync(await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+
+    private async ValueTask<int[]> ReadIntArrayAsync(CancellationToken cancellationToken = default)
+    {
+        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
+        var result = new int[length];
+        for (var i = 0; i < length; i++) result[i] = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    private async ValueTask<long[]> ReadLongArrayAsync(CancellationToken cancellationToken = default)
+    {
+        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
+        var result = new long[length];
+        for (var i = 0; i < length; i++) result[i] = await ReadLongAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    public async ValueTask<string> ReadStringAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        short length = await ReadShortAsync(cancellationToken).ConfigureAwait(false);
+        if (length < 0) throw new IOException($"Invalid string length: {length}");
+        byte[] stringValue = await ReadAsync(length, cancellationToken).ConfigureAwait(false);
+        return ModifiedUtf8.GetString(stringValue);
+    }
+
+    public async ValueTask<int> ReadIntAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = await ReadAsync(sizeof(int), cancellationToken).ConfigureAwait(false);
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buffer, 0));
+    }
+
+    public async ValueTask<float> ReadFloatAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = await ReadAsync(sizeof(float), cancellationToken).ConfigureAwait(false);
+        return NetworkToHostOrder(BitConverter.ToSingle(buffer, 0));
+    }
+
+    public async ValueTask<double> ReadDoubleAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = await ReadAsync(sizeof(double), cancellationToken).ConfigureAwait(false);
+        return NetworkToHostOrder(buffer);
+    }
+
+    public async ValueTask<short> ReadShortAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = await ReadAsync(sizeof(short), cancellationToken).ConfigureAwait(false);
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt16(buffer, 0));
+    }
+
+    public async ValueTask<long> ReadLongAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = await ReadAsync(sizeof(long), cancellationToken).ConfigureAwait(false);
+        return IPAddress.NetworkToHostOrder(BitConverter.ToInt64(buffer, 0));
+    }
+
+    public async ValueTask<int> ReadVarIntAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        (_, int value) = await ReadVarIntWithBytesReadAsync(cancellationToken).ConfigureAwait(false);
+        return value;
+    }
+
+    public async ValueTask<(int BytesRead, int Value)> ReadVarIntWithBytesReadAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        var numRead = 0;
+        var result = 0;
+        byte[] singleByteBuffer = ArrayPool<byte>.Shared.Rent(1);
         try
         {
-            var totalRead = 0;
-            while (totalRead < length)
+            byte readByte;
+            do
             {
-                int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
-                if (bytesRead <= 0) break;
-                totalRead += bytesRead;
-            }
+                if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
 
-            var result = new byte[totalRead];
-            Buffer.BlockCopy(buffer, 0, result, 0, totalRead);
-            return result;
+                int bytesReadFromStream = await _stream.ReadAsync(singleByteBuffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
+                if (bytesReadFromStream == 0) throw new EndOfStreamException("Stream ended while reading VarInt.");
+                readByte = singleByteBuffer[0];
+
+                int value = readByte & 0x7f;
+                result |= value << (7 * numRead);
+                numRead++;
+            } while ((readByte & 0x80) != 0);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(singleByteBuffer);
+        }
+        return (numRead, result);
+    }
+
+    public async ValueTask<byte[]> ReadAsync(int length, CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        switch (length)
+        {
+            case < 0:
+                throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative.");
+            case 0:
+                return [];
+        }
+
+        var buffer = new byte[length];
+        await _stream.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+        return buffer;
+    }
+
+    public async ValueTask<byte> ReadByteCheckedAsync(CancellationToken cancellationToken = default)
+    {
+        CheckDisposed();
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
+        try
+        {
+            await _stream.ReadExactlyAsync(buffer.AsMemory(0,1), cancellationToken).ConfigureAwait(false);
+            return buffer[0];
+        }
+        catch (EndOfStreamException)
+        {
+             throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
-
-    private static readonly ThreadLocal<byte[]> VarIntBuffer = new(() => new byte[5]);
-
-    public int ReadVarInt(out int bytesRead)
-    {
-        var numRead = 0;
-        var result = 0;
-        byte[] buffer = VarIntBuffer.Value!;
-
-        do
-        {
-            if (numRead >= 5) throw new Exception("VarInt is too big");
-
-            buffer[numRead] = (byte)ReadByte();
-            int value = buffer[numRead] & 0x7f;
-            result |= value << (7 * numRead);
-
-            numRead++;
-        } while ((buffer[numRead - 1] & 0x80) != 0);
-
-        bytesRead = numRead;
-        return result;
-    }
     
-    public int ReadVarInt()
+
+    private void CheckDisposed()
     {
-        return ReadVarInt(out int _);
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
-    
+
+    private int ReadIntCheckedLength()
+    {
+        int length = ReadInt();
+        if (length < 0) throw new IOException($"Invalid array/byte array length: {length}");
+        return length;
+    }
+
+    private async ValueTask<int> ReadIntCheckedLengthAsync(CancellationToken cancellationToken = default)
+    {
+        int length = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
+        if (length < 0) throw new IOException($"Invalid array/byte array length: {length}");
+        return length;
+    }
+
+    private byte ReadByteChecked()
+    {
+        int b = ReadByte();
+        if (b == -1) throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
+        return (byte)b;
+    }
+
     private static double NetworkToHostOrder(byte[] data)
     {
         if (BitConverter.IsLittleEndian) Array.Reverse(data);
@@ -255,33 +438,44 @@ public class NbtReader(Stream stream) : IDisposable
     private static float NetworkToHostOrder(float network)
     {
         byte[] bytes = BitConverter.GetBytes(network);
-
-        if (BitConverter.IsLittleEndian)
-            Array.Reverse(bytes);
-
+        if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
         return BitConverter.ToSingle(bytes, 0);
     }
-    
+
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
-    protected void Dispose(bool disposing)
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
     {
         if (_disposed) return;
-        
         if (disposing)
         {
-            _stream?.Dispose(); 
+            if (!leaveOpen)
+            {
+                _stream?.Dispose();
+            }
         }
-            
         _disposed = true;
     }
-    
-    ~NbtReader()
+
+    protected virtual async ValueTask DisposeAsyncCore()
     {
-        Dispose(false);
+        if (_disposed) return;
+        if (!leaveOpen && _stream != null)
+        {
+            await _stream.DisposeAsync().ConfigureAwait(false);
+        }
     }
+
+    ~NbtReader() => Dispose(false);
 }

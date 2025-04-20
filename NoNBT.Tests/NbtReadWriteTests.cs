@@ -9,18 +9,18 @@ public class NbtReadWriteTests
     private static (T?, T?) ReadWriteTag<T>(T tag) where T : NbtTag
     {
         using var ms = new MemoryStream();
-        var writer = new NbtWriter(ms);
+        var writer = new NbtWriter(ms, true);
         writer.WriteTag(tag, named: true);
 
         ms.Position = 0;
 
-        var reader = new NbtReader(ms);
+        var reader = new NbtReader(ms, true);
         var readTag = reader.ReadTag(named: true) as T;
 
         return (tag, readTag);
     }
 
-    private static void AssertTagEquals(NbtTag? expected, NbtTag? actual)
+    public static void AssertTagEquals(NbtTag? expected, NbtTag? actual)
     {
         Assert.IsNotNull(actual, $"Read tag was null, expected {expected?.GetType().Name}");
         Assert.AreEqual(expected!.TagType, actual.TagType, "Tag types do not match.");
