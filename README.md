@@ -50,7 +50,19 @@ dotnet add package NoNBT
 ### Reading NBT Data
 
 ```csharp
+using var reader = new NbtReader(stream);
 
+NbtTag? tag = reader.ReadTag();
+
+if (tag is NbtCompound rootTag)
+{
+    string? name = rootTag.Get<NbtString>("name")?.Value;
+    int? score = rootTag.Get<NbtInt>("score")?.Value;
+    Console.WriteLine($"Player {name} has score {score}");
+}
+
+// or use the indexer
+string? name = (rootTag["name"] as NbtString)?.Value;
 ```
 
 > [!NOTE]  
@@ -59,7 +71,25 @@ dotnet add package NoNBT
 ### Writing NBT Data
 
 ```csharp
+using var writer = new NbtWriter(stream);
 
+writer.WriteTag(new NbtString("message", "Hello, World!"));
+
+var compound = new NbtCompound("root")
+{
+    new NbtString("name", "Player1"),
+    new NbtInt("score", 42)
+};
+writer.WriteTag(compound);
+
+public void WriteTextComponent(TextComponent? component)
+{
+    if (component == null) return;
+    using NbtWriter writer = new(this);
+
+    NbtCompound tag = component.ToNbt();
+    writer.WriteTag(tag, false); // text component root tag is unnamed
+}
 ```
 
 > [!NOTE]
