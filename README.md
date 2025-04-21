@@ -17,25 +17,12 @@ There is **no** SNBT (Stringified NBT) support in this library. If you need to p
 
 ## Capabilities
 *   **Read & Write NBT Data:** Supports reading from and writing to streams.
-*   **Full Tag Support:** Implements all standard NBT tags:
-    *   `TAG_End` (handled implicitly)
-    *   `TAG_Byte`
-    *   `TAG_Short`
-    *   `TAG_Int`
-    *   `TAG_Long`
-    *   `TAG_Float`
-    *   `TAG_Double`
-    *   `TAG_Byte_Array`
-    *   `TAG_String` (handles Modified UTF-8)
-    *   `TAG_List`
-    *   `TAG_Compound`
-    *   `TAG_Int_Array`
-    *   `TAG_Long_Array`
-*   **Modified UTF-8:** Correctly encodes and decodes strings using Minecraft's MUTF-8 specification.
+*   **Full Tag Support:** Implements all standard NBT tags.
+*   **Modified UTF-8:** Correctly encodes and decodes strings using MUTF-8 used by Minecraft.
 *   **Simple API:** Easy-to-use `NbtReader` and `NbtWriter` classes.
+*   **Asynchronous API**: Full async/await support with ValueTask-based methods.
 *   **Object Model:** Represents NBT data using a clear hierarchy of `NbtTag` derived classes.
-*   **JSON Conversion:** Basic `ToJson()` method on tags for representation (primarily for debugging/testing).
-*   **Modern .NET:** Targets `net9.0` (update as needed) with nullable reference types enabled.
+*   **JSON Conversion:** Basic `ToJson()` method on tags for debugging/testing purposes.
 
 ## Installation
 
