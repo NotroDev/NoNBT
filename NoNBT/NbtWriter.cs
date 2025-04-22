@@ -36,9 +36,10 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
                 "Cannot write TAG_End directly. It is written automatically at the end of a TAG_Compound.",
                 nameof(tag));
 
+        WriteByte((byte)tag.TagType);
+        
         if (named)
         {
-            WriteByte((byte)tag.TagType);
             if (tag.Name == null)
                 throw new ArgumentNullException(nameof(tag.Name), "Tag name cannot be null when writing a named tag.");
             WriteString(tag.Name);
