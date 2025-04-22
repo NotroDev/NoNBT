@@ -545,5 +545,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         }
     }
 
+    /// Finalizer for the NbtReader.
+    /// This method is called when the object is being garbage collected.
     ~NbtReader() => Dispose(false);
 }

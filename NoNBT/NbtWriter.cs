@@ -402,5 +402,7 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         }
     }
 
+    /// Finalizer for the NbtWriter.
+    /// This method is called when the object is being garbage collected.
     ~NbtWriter() => Dispose(false);
 }
