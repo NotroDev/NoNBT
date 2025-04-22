@@ -148,8 +148,17 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private long[] ReadLongArray()
     {
         int length = ReadIntCheckedLength();
+        if (length == 0) return [];
+
+        int byteCount = length * sizeof(long);
+        byte[] buffer = Read(byteCount);
+
         var result = new long[length];
-        for (var i = 0; i < length; i++) result[i] = ReadLong();
+        Span<byte> bufferSpan = buffer.AsSpan();
+        for (var i = 0; i < length; i++)
+        {
+            result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
+        }
         return result;
     }
 
@@ -500,8 +509,17 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private async ValueTask<long[]> ReadLongArrayAsync(CancellationToken cancellationToken = default)
     {
         int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
+        if (length == 0) return [];
+
+        int byteCount = length * sizeof(long);
+        byte[] buffer = await ReadAsync(byteCount, cancellationToken).ConfigureAwait(false);
+
         var result = new long[length];
-        for (var i = 0; i < length; i++) result[i] = await ReadLongAsync(cancellationToken).ConfigureAwait(false);
+        Span<byte> bufferSpan = buffer.AsSpan();
+        for (var i = 0; i < length; i++)
+        {
+            result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
+        }
         return result;
     }
 
