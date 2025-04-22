@@ -1,6 +1,6 @@
-﻿using System.Buffers;
-using System.Buffers.Binary;
-using System.Net;
+﻿using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using System.Text;
 using NoNBT.Tags;
 
 namespace NoNBT;
@@ -9,296 +9,295 @@ namespace NoNBT;
 /// Provides functionality for reading NBT data from a stream.
 /// </summary>
 /// <remarks>
-/// The <see cref="NbtReader"/> class supports both synchronous and asynchronous methods
-/// for reading NBT tags and their associated data types, including strings, integers,
-/// floats, doubles, shorts, longs, bytes, and variable-length integers. It allows
-/// reading named or unnamed tags, based on the provided parameters.
+/// Reads NBT data according to the specification (Big Endian).
+/// Supports synchronous and asynchronous operations. Async operations utilize Task.Run
+/// for improved performance over granular async IO for small reads.
 /// </remarks>
-/// <example>
-/// The class should be used with a provided <see cref="Stream"/> object to read
-/// NBT data. Make sure to properly release resources using its synchronous or
-/// asynchronous dispose methods.
-/// </example>
-/// <threadsafety>
-/// Instances of <see cref="NbtReader"/> are not thread-safe. Ensure usage is confined
-/// to a single thread or implement your own synchronization mechanism.
-/// </threadsafety>
-/// <see cref="IDisposable"/> and <see cref="IAsyncDisposable"/> are implemented to handle the proper
-/// disposal of resources tied to the stream instance being read from.
 public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAsyncDisposable
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private bool _disposed;
     private readonly byte[] _primitiveReadBuffer = new byte[8];
 
-    private const int MaxVarIntSize = 5;
-
     /// <summary>
-    /// Reads an NBT tag from the stream with an optional name.
+    /// Reads the next NBT tag from the stream.
     /// </summary>
     /// <param name="named">
-    /// A boolean value determining whether the tag should include a name.
-    /// If true, the tag will be read with its name; otherwise, the tag will be read without a name.
+    /// If true, expects a tag type byte, then a name (length-prefixed string), then the tag payload.
+    /// If false, expects only the tag payload (used for reading list elements).
     /// </param>
     /// <returns>
-    /// An <see cref="NbtTag"/> instance representing the read tag, or null if the tag type is End.
+    /// The deserialized <see cref="NbtTag"/>, or null if <paramref name="named"/> is true and a TAG_End was encountered (signaling the end of a CompoundTag).
     /// </returns>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the tag type.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an unsupported tag type is encountered or an unexpected TAG_End is found during tag reading.
-    /// </exception>
+    /// <exception cref="EndOfStreamException">If the stream ends unexpectedly.</exception>
+    /// <exception cref="IOException">If the data format is invalid (e.g., bad tag type, negative length, unexpected TAG_End).</exception>
+    /// <exception cref="ObjectDisposedException"> If the reader is disposed. </exception>
     public NbtTag? ReadTag(bool named = true)
     {
         CheckDisposed();
-        int tagTypeByte = ReadByte();
-        if (tagTypeByte == -1) throw new EndOfStreamException("Unexpected end of stream while reading tag type.");
-        var tagType = (NbtTagType)tagTypeByte;
-        if (tagType == NbtTagType.End) return null;
 
-        string? name = named ? ReadString() : null;
+        NbtTagType tagType;
+        string? name;
 
-        NbtTag tag = tagType switch
+        if (named)
         {
-            NbtTagType.Byte => new ByteTag(name, ReadByteChecked()),
-            NbtTagType.Short => new ShortTag(name, ReadShort()),
-            NbtTagType.Int => new IntTag(name, ReadInt()),
-            NbtTagType.Long => new LongTag(name, ReadLong()),
-            NbtTagType.Float => new FloatTag(name, ReadFloat()),
-            NbtTagType.Double => new DoubleTag(name, ReadDouble()),
-            NbtTagType.ByteArray => new ByteArrayTag(name, ReadByteArray()),
-            NbtTagType.String => new StringTag(name, ReadString()),
-            NbtTagType.List => ReadListTag(name),
-            NbtTagType.Compound => ReadCompoundTag(name),
-            NbtTagType.IntArray => new IntArrayTag(name, ReadIntArray()),
-            NbtTagType.LongArray => new LongArrayTag(name, ReadLongArray()),
-            NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
-            _ => throw new IOException($"Unsupported tag type: {tagType}")
-        };
+            int tagTypeByte = ReadByte();
+            switch (tagTypeByte)
+            {
+                case -1:
+                    throw new EndOfStreamException("Cannot read tag type; end of stream reached.");
+                case (int)NbtTagType.End:
+                    return null;
+                default:
+                    tagType = (NbtTagType)tagTypeByte;
+                    name = ReadStringInternal();
+                    break;
+            }
+        }
+        else
+        {
+            throw new ArgumentException(
+                "Reading a tag with named = false requires context (like TAG_List) to know the type. Use ReadTagPayload directly in such cases.",
+                nameof(named));
+        }
 
+        NbtTag tag = ReadTagPayload(tagType, name);
         return tag;
     }
 
-    private ListTag ReadListTag(string? name)
+    private NbtTag ReadTagPayload(NbtTagType type, string? name)
+    {
+        CheckDisposed();
+        return type switch
+        {
+            NbtTagType.Byte => new ByteTag(name, ReadByteChecked()),
+            NbtTagType.Short => new ShortTag(name, ReadShortInternal()),
+            NbtTagType.Int => new IntTag(name, ReadIntInternal()),
+            NbtTagType.Long => new LongTag(name, ReadLongInternal()),
+            NbtTagType.Float => new FloatTag(name, ReadFloatInternal()),
+            NbtTagType.Double => new DoubleTag(name, ReadDoubleInternal()),
+            NbtTagType.ByteArray => ReadByteArrayPayload(name),
+            NbtTagType.String => new StringTag(name, ReadStringInternal()),
+            NbtTagType.List => ReadListPayload(name),
+            NbtTagType.Compound => ReadCompoundPayload(name),
+            NbtTagType.IntArray => ReadIntArrayPayload(name),
+            NbtTagType.LongArray => ReadLongArrayPayload(name),
+            NbtTagType.End => throw new IOException(
+                "TAG_End encountered where a tag was expected. This should not happen."),
+            _ => throw new IOException($"Unsupported tag type payload: {type}")
+        };
+    }
+
+    private ListTag ReadListPayload(string? name)
     {
         CheckDisposed();
         var listType = (NbtTagType)ReadByteChecked();
-        int count = ReadInt();
-        if (count < 0) throw new IOException($"Invalid list count: {count}");
+        int count = ReadIntCheckedLength();
+        if (listType == NbtTagType.End && count > 0)
+            throw new IOException("TAG_List specifies TAG_End as element type but has count > 0.");
 
         var list = new ListTag(name, listType);
         if (count == 0) return list;
 
-        for (var i = 0; i < count; i++)
+        if (listType is NbtTagType.Byte or NbtTagType.Short or NbtTagType.Int or NbtTagType.Long or NbtTagType.Float
+            or NbtTagType.Double)
         {
-            NbtTag element = listType switch
+            int elementSize = GetPrimitiveSize(listType);
+            long totalBytes = (long)count * elementSize;
+
+            if (totalBytes > 1024 * 1024 * 512)
+                throw new IOException($"TAG_List payload size ({totalBytes} bytes) exceeds safety limit.");
+
+            byte[] listData = ReadBytes((int)totalBytes);
+            bool needsSwap = BitConverter.IsLittleEndian;
+
+            for (var i = 0; i < count; i++)
             {
-                NbtTagType.Byte => new ByteTag(null, ReadByteChecked()),
-                NbtTagType.Short => new ShortTag(null, ReadShort()),
-                NbtTagType.Int => new IntTag(null, ReadInt()),
-                NbtTagType.Long => new LongTag(null, ReadLong()),
-                NbtTagType.Float => new FloatTag(null, ReadFloat()),
-                NbtTagType.Double => new DoubleTag(null, ReadDouble()),
-                NbtTagType.ByteArray => new ByteArrayTag(null, ReadByteArray()),
-                NbtTagType.String => new StringTag(null, ReadString()),
-                NbtTagType.List => ReadListTag(null),
-                NbtTagType.Compound => ReadCompoundTag(null),
-                NbtTagType.IntArray => new IntArrayTag(null, ReadIntArray()),
-                NbtTagType.LongArray => new LongArrayTag(null, ReadLongArray()),
-                NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
-                _ => throw new IOException($"Unsupported list element type: {listType}")
-            };
-            list.Add(element);
+                ReadOnlySpan<byte> elementData = listData.AsSpan(i * elementSize, elementSize);
+                NbtTag element = CreatePrimitiveTag(listType, null, elementData, needsSwap);
+                list.Add(element);
+            }
         }
+        else
+        {
+            for (var i = 0; i < count; i++)
+            {
+                NbtTag element = ReadTagPayload(listType, null);
+                list.Add(element);
+            }
+        }
+
         return list;
     }
 
-    private CompoundTag ReadCompoundTag(string? name)
+    private CompoundTag ReadCompoundPayload(string? name)
     {
         CheckDisposed();
         var compound = new CompoundTag(name);
         while (true)
         {
-            NbtTag? tag = ReadTag();
-            if (tag == null) break;
-            compound.Add(tag);
+            int tagTypeByte = ReadByte();
+            if (tagTypeByte == -1) throw new EndOfStreamException("Unexpected end of stream within TAG_Compound.");
+            if (tagTypeByte == (int)NbtTagType.End) break;
+
+            var childType = (NbtTagType)tagTypeByte;
+            string? childName = ReadStringInternal();
+            if (childName == null) throw new IOException("Null name encountered for tag within TAG_Compound.");
+
+            NbtTag childTag = ReadTagPayload(childType, childName);
+            compound.Add(childTag);
         }
+
         return compound;
     }
 
-    private byte[] ReadByteArray() => Read(ReadIntCheckedLength());
-    private int[] ReadIntArray()
+    private ByteArrayTag ReadByteArrayPayload(string? name)
     {
         int length = ReadIntCheckedLength();
-        if (length == 0) return [];
+        byte[] data = ReadBytes(length);
+        return new ByteArrayTag(name, data);
+    }
+
+    private IntArrayTag ReadIntArrayPayload(string? name)
+    {
+        int length = ReadIntCheckedLength();
+        if (length == 0) return new IntArrayTag(name, []);
 
         int byteCount = length * sizeof(int);
-        byte[] buffer = Read(byteCount);
-    
+        if (byteCount is < 0 or > 1024 * 1024 * 512)
+            throw new IOException($"IntArray size ({byteCount} bytes) is invalid or exceeds safety limits.");
+
+        byte[] buffer = ReadBytes(byteCount);
+
+        bool needsSwap = BitConverter.IsLittleEndian;
         var result = new int[length];
-        Span<byte> bufferSpan = buffer.AsSpan();
-        for (var i = 0; i < length; i++)
+
+        if (needsSwap)
         {
-            result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
+            for (var i = 0; i < length; i++)
+            {
+                result[i] = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(i * sizeof(int)));
+            }
         }
-        return result;
+        else
+        {
+            MemoryMarshal.Cast<byte, int>(buffer).CopyTo(result);
+        }
+
+        return new IntArrayTag(name, result);
     }
 
-    private long[] ReadLongArray()
+    private LongArrayTag ReadLongArrayPayload(string? name)
     {
         int length = ReadIntCheckedLength();
-        if (length == 0) return [];
+        if (length == 0) return new LongArrayTag(name, []);
 
         int byteCount = length * sizeof(long);
-        byte[] buffer = Read(byteCount);
+        if (byteCount is < 0 or > 1024 * 1024 * 512)
+            throw new IOException($"LongArray size ({byteCount} bytes) is invalid or exceeds safety limits.");
 
+        byte[] buffer = ReadBytes(byteCount);
+
+        bool needsSwap = BitConverter.IsLittleEndian;
         var result = new long[length];
-        Span<byte> bufferSpan = buffer.AsSpan();
-        for (var i = 0; i < length; i++)
+
+        if (needsSwap)
         {
-            result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
+            for (var i = 0; i < length; i++)
+            {
+                result[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(i * sizeof(long)));
+            }
         }
-        return result;
+        else
+        {
+            MemoryMarshal.Cast<byte, long>(buffer).CopyTo(result);
+        }
+
+        return new LongArrayTag(name, result);
     }
 
     /// <summary>
-    /// Reads a string from the stream encoded in Modified UTF-8 format.
+    /// Reads a string from the stream (length-prefixed short, Modified UTF-8).
+    /// Used for tag names and StringTag values.
     /// </summary>
-    /// <returns>
-    /// A string instance representing the value read from the stream.
-    /// </returns>
-    /// <exception cref="IOException">
-    /// Thrown if the string length is invalid (negative) or an error occurs while reading bytes from the stream.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the stream has been disposed before calling this method.
-    /// </exception>
-    public string ReadString()
+    public string ReadString() => ReadStringInternal();
+
+    private string ReadStringInternal()
     {
         CheckDisposed();
-        short length = ReadShort();
-        if (length < 0) throw new IOException($"Invalid string length: {length}");
-        byte[] stringValue = Read(length);
-        return ModifiedUtf8.GetString(stringValue);
+        short length = ReadShortInternal();
+        switch (length)
+        {
+            case < 0:
+                throw new IOException($"Invalid string length: {length}");
+            case 0:
+                return string.Empty;
+            default:
+            {
+                byte[] stringBytes = ReadBytes(length);
+                try
+                {
+                    return ModifiedUtf8.GetString(stringBytes);
+                }
+                catch (DecoderFallbackException ex)
+                {
+                    throw new IOException("Invalid Modified UTF-8 sequence encountered.", ex);
+                }
+            }
+        }
     }
 
-    /// <summary>
-    /// Reads a 32-bit signed integer from the stream in big-endian format.
-    /// </summary>
-    /// <returns>
-    /// The 32-bit signed integer read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the method is called on a disposed instance.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if the stream ends unexpectedly or an error occurs during reading.
-    /// </exception>
-    public int ReadInt()
+    /// Reads a 32-bit signed integer (Big Endian).
+    public int ReadInt() => ReadIntInternal();
+
+    private int ReadIntInternal()
     {
         CheckDisposed();
         ReadToPrimitiveBuffer(sizeof(int));
-        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(int)));
+        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer);
     }
 
-    /// <summary>
-    /// Reads a 32-bit floating-point number from the stream in network byte order.
-    /// </summary>
-    /// <returns>
-    /// A <see cref="float"/> representing the value read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has been disposed when attempting to read from the stream.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while attempting to read the required number of bytes.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs during the reading process.
-    /// </exception>
-    public float ReadFloat()
+    /// Reads a 32-bit float (Big Endian).
+    public float ReadFloat() => ReadFloatInternal();
+
+    private float ReadFloatInternal()
     {
         CheckDisposed();
         ReadToPrimitiveBuffer(sizeof(float));
-        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(float)));
+        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer);
     }
 
-    /// <summary>
-    /// Reads a double-precision floating-point number from the stream in network byte order.
-    /// </summary>
-    /// <returns>
-    /// A double value read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has been disposed.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while attempting to read the double value.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an error occurs while reading from the stream.
-    /// </exception>
-    public double ReadDouble()
+    /// Reads a 64-bit double (Big Endian).
+    public double ReadDouble() => ReadDoubleInternal();
+
+    private double ReadDoubleInternal()
     {
         CheckDisposed();
         ReadToPrimitiveBuffer(sizeof(double));
-        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(double)));
+        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer);
     }
 
-    /// <summary>
-    /// Reads a 16-bit signed integer from the stream in big-endian format.
-    /// </summary>
-    /// <returns>
-    /// A short value representing the 16-bit signed integer read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has been disposed before this method is called.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while attempting to read the required data.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an error occurs while accessing the underlying stream.
-    /// </exception>
-    public short ReadShort()
+    /// Reads a 16-bit short (Big Endian).
+    public short ReadShort() => ReadShortInternal();
+
+    private short ReadShortInternal()
     {
         CheckDisposed();
         ReadToPrimitiveBuffer(sizeof(short));
-        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(short)));
+        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer);
     }
 
-    /// <summary>
-    /// Reads a 64-bit signed integer (long) from the stream in network byte order and converts it to the host byte order.
-    /// </summary>
-    /// <returns>
-    /// A long value read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the method is called after the stream has been disposed.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an error occurs while reading from the stream.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while attempting to read the long value.
-    /// </exception>
-    public long ReadLong()
+    /// Reads a 64-bit long (Big Endian).
+    public long ReadLong() => ReadLongInternal();
+
+    private long ReadLongInternal()
     {
         CheckDisposed();
         ReadToPrimitiveBuffer(sizeof(long));
-        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(long)));
+        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer);
     }
 
-    /// <summary>
-    /// Reads a single byte from the underlying stream.
-    /// </summary>
-    /// <returns>
-    /// An integer representing the next byte in the stream, or -1 if the end of the stream is reached.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the stream has already been disposed when attempting to read.
-    /// </exception>
+    /// Reads a single byte. Returns -1 if end of stream.
     public int ReadByte()
     {
         CheckDisposed();
@@ -306,12 +305,13 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     }
 
     /// <summary>
-    /// Gets the number of elements within the collection or sequence.
+    /// Reads exactly `length` bytes from the stream into a new byte array.
+    /// Uses efficient block reading.
     /// </summary>
-    /// <returns>
-    /// An integer representing the total count of elements.
-    /// </returns>
-    public byte[] Read(int length)
+    /// <exception cref="ArgumentOutOfRangeException">If length is negative.</exception>
+    /// <exception cref="EndOfStreamException">If stream ends before reading `length` bytes.</exception>
+    /// <exception cref="ObjectDisposedException">If reader is disposed.</exception>
+    public byte[] ReadBytes(int length)
     {
         CheckDisposed();
         switch (length)
@@ -327,457 +327,56 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         while (totalRead < length)
         {
             int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
-            if (bytesRead == 0) throw new EndOfStreamException($"Expected {length} bytes, but stream ended after {totalRead} bytes.");
+            if (bytesRead == 0)
+                throw new EndOfStreamException($"Expected {length} bytes, but stream ended after {totalRead} bytes.");
             totalRead += bytesRead;
         }
+
         return buffer;
     }
 
     /// <summary>
-    /// Reads a variable-length integer (VarInt) from the stream.
+    /// Asynchronously reads the next NBT tag from the stream using Task.Run.
     /// </summary>
-    /// <param name="bytesRead">
-    /// An output parameter that returns the number of bytes read while decoding the VarInt.
-    /// </param>
-    /// <returns>
-    /// The decoded integer value as a VarInt.
-    /// </returns>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the VarInt.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if the VarInt is too large or an unexpected condition occurs during reading.
-    /// </exception>
-    public int ReadVarInt(out int bytesRead)
-    {
-        CheckDisposed();
-        var numRead = 0;
-        var result = 0;
-        byte readByte;
-        do
-        {
-            if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
-            int b = ReadByte();
-            if (b == -1) throw new EndOfStreamException("Stream ended while reading VarInt.");
-            readByte = (byte)b;
-
-            int value = readByte & 0x7f;
-            result |= value << (7 * numRead);
-            numRead++;
-        } while ((readByte & 0x80) != 0);
-
-        bytesRead = numRead;
-        return result;
-    }
-
-    /// <summary>
-    /// Reads a variable-length integer (VarInt) from the stream.
-    /// </summary>
-    /// <returns>
-    /// The integer value decoded from the VarInt format.
-    /// </returns>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the VarInt.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an invalid VarInt encoding is encountered.
-    /// </exception>
-    public int ReadVarInt() => ReadVarInt(out int _);
-
-    /// <summary>
-    /// Asynchronously reads an NBT tag from the stream with an optional name.
-    /// </summary>
-    /// <param name="named">
-    /// A boolean value indicating whether the tag should include a name.
-    /// If true, the tag will be read with its name; otherwise, the tag will be read without a name.
-    /// </param>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the asynchronous operation.
-    /// </param>
-    /// <returns>
-    /// A task representing the asynchronous operation. The task result contains an <see cref="NbtTag"/> instance representing the read tag,
-    /// or null if the tag type is End.
-    /// </returns>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the tag type.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an unsupported tag type is encountered or an unexpected TAG_End is found during tag reading.
-    /// </exception>
+    /// <param name="named">If true, expects type, name, payload. If false, behavior is undefined (use ReadTagPayloadAsync).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The read NbtTag or null if TAG_End was encountered.</returns>
+    /// <exception cref="ObjectDisposedException">If reader is disposed.</exception>
+    /// <exception cref="OperationCanceledException">If cancellation is requested.</exception>
+    /// <exception cref="AggregateException">Wraps exceptions thrown during the underlying synchronous read.</exception>
     public async ValueTask<NbtTag?> ReadTagAsync(bool named = true, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte tagTypeByte = await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false);
-        var tagType = (NbtTagType)tagTypeByte;
-        if (tagType == NbtTagType.End) return null;
+        if (!named)
+            throw new ArgumentException(
+                "Async reading of unnamed tags requires context. Use specific payload reading methods.", nameof(named));
 
-        string? name = named ? await ReadStringAsync(cancellationToken).ConfigureAwait(false) : null;
-
-        NbtTag tag = tagType switch
+        try
         {
-            NbtTagType.Byte => new ByteTag(name, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Short => new ShortTag(name, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Int => new IntTag(name, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Long => new LongTag(name, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Float => new FloatTag(name, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.Double => new DoubleTag(name, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.ByteArray => new ByteArrayTag(name, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.String => new StringTag(name, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.List => await ReadListTagAsync(name, cancellationToken).ConfigureAwait(false),
-            NbtTagType.Compound => await ReadCompoundTagAsync(name, cancellationToken).ConfigureAwait(false),
-            NbtTagType.IntArray => new IntArrayTag(name, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.LongArray => new LongArrayTag(name, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
-            NbtTagType.End => throw new IOException("Unexpected TAG_End while reading tag."),
-            _ => throw new IOException($"Unsupported tag type: {tagType}")
-        };
-        return tag;
-    }
-
-    private async ValueTask<ListTag> ReadListTagAsync(string? name, CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        var listType = (NbtTagType)await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false);
-        int count = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
-        if (count < 0) throw new IOException($"Invalid list count: {count}");
-
-        var list = new ListTag(name, listType);
-        if (count == 0) return list;
-
-        for (var i = 0; i < count; i++)
-        {
-            NbtTag element = listType switch
-            {
-                NbtTagType.Byte => new ByteTag(null, await ReadByteCheckedAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Short => new ShortTag(null, await ReadShortAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Int => new IntTag(null, await ReadIntAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Long => new LongTag(null, await ReadLongAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Float => new FloatTag(null, await ReadFloatAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.Double => new DoubleTag(null, await ReadDoubleAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.ByteArray => new ByteArrayTag(null, await ReadByteArrayAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.String => new StringTag(null, await ReadStringAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.List => await ReadListTagAsync(null, cancellationToken).ConfigureAwait(false),
-                NbtTagType.Compound => await ReadCompoundTagAsync(null, cancellationToken).ConfigureAwait(false),
-                NbtTagType.IntArray => new IntArrayTag(null, await ReadIntArrayAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.LongArray => new LongArrayTag(null, await ReadLongArrayAsync(cancellationToken).ConfigureAwait(false)),
-                NbtTagType.End => throw new IOException("Empty list element type (TAG_End) is not allowed."),
-                _ => throw new IOException($"Unsupported list element type: {listType}")
-            };
-            list.Add(element);
+            return await Task.Run(() => ReadTag(named: true), cancellationToken).ConfigureAwait(false);
         }
-        return list;
-    }
-
-    private async ValueTask<CompoundTag> ReadCompoundTagAsync(string? name, CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        var compound = new CompoundTag(name);
-        while (true)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ObjectDisposedException)
         {
-            NbtTag? tag = await ReadTagAsync(true, cancellationToken).ConfigureAwait(false);
-            if (tag == null) break;
-            compound.Add(tag);
+            throw new AggregateException("Error during async NBT read operation.", ex);
         }
-        return compound;
     }
 
-    private async ValueTask<byte[]> ReadByteArrayAsync(CancellationToken cancellationToken = default)
-    {
-        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
-        if (length == 0) return [];
-
-        byte[] buffer = await ReadAsync(length, cancellationToken).ConfigureAwait(false);
-        return buffer;
-    }
-
-    private async ValueTask<int[]> ReadIntArrayAsync(CancellationToken cancellationToken = default)
-    {
-        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
-        if (length == 0) return [];
-
-        int byteCount = length * sizeof(int);
-        byte[] buffer = await ReadAsync(byteCount, cancellationToken).ConfigureAwait(false); 
-    
-        var result = new int[length];
-        Span<byte> bufferSpan = buffer.AsSpan();
-        for (var i = 0; i < length; i++)
-        {
-            result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
-        }
-        return result;
-    }
-
-    private async ValueTask<long[]> ReadLongArrayAsync(CancellationToken cancellationToken = default)
-    {
-        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
-        if (length == 0) return [];
-
-        int byteCount = length * sizeof(long);
-        byte[] buffer = await ReadAsync(byteCount, cancellationToken).ConfigureAwait(false);
-
-        var result = new long[length];
-        Span<byte> bufferSpan = buffer.AsSpan();
-        for (var i = 0; i < length; i++)
-        {
-            result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// Reads a UTF-8 string from the stream asynchronously.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the asynchronous operation.
-    /// The default value is <see cref="CancellationToken.None"/>.
-    /// </param>
-    /// <returns>
-    /// A <see cref="string"/> representing the UTF-8 string read from the stream.
-    /// </returns>
-    /// <exception cref="IOException">
-    /// Thrown if the string length is invalid or the stream ends unexpectedly while reading the string.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has already been disposed.
-    /// </exception>
+    /// Asynchronously reads a string (length-prefixed short, Modified UTF-8) using Task.Run.
     public async ValueTask<string> ReadStringAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        short length = await ReadShortAsync(cancellationToken).ConfigureAwait(false);
-        if (length < 0) throw new IOException($"Invalid string length: {length}");
-        byte[] stringValue = await ReadAsync(length, cancellationToken).ConfigureAwait(false);
-        return ModifiedUtf8.GetString(stringValue);
-    }
-
-    /// <summary>
-    /// Asynchronously reads a 4-byte integer from the stream in big-endian order.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the asynchronous operation.
-    /// </param>
-    /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the integer value read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has already been disposed.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the required bytes.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs while reading from the stream.
-    /// </exception>
-    public async ValueTask<int> ReadIntAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(sizeof(int), cancellationToken).ConfigureAwait(false);
-        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(int)));
-    }
-
-    /// <summary>
-    /// Reads a single-precision floating-point value from the stream asynchronously.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A token to monitor for cancellation requests. The default value is <see cref="CancellationToken.None"/>.
-    /// </param>
-    /// <returns>
-    /// A single-precision floating-point value read from the underlying stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has been disposed.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading the required data.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an input/output error occurs during the read operation.
-    /// </exception>
-    public async ValueTask<float> ReadFloatAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(sizeof(float), cancellationToken).ConfigureAwait(false);
-        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(float)));
-    }
-
-    /// <summary>
-    /// Asynchronously reads a double value from the underlying stream.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A token to monitor for cancellation requests. If cancellation is requested, the operation will be aborted.
-    /// </param>
-    /// <returns>
-    /// A <see cref="double"/> value that was read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the reader has been disposed prior to calling this method.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while attempting to read the bytes for the double value.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs during the asynchronous read operation.
-    /// </exception>
-    public async ValueTask<double> ReadDoubleAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(sizeof(double), cancellationToken).ConfigureAwait(false);
-        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(double)));
-    }
-
-    /// <summary>
-    /// Asynchronously reads a 16-bit signed integer (short) from the stream in network byte order.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the asynchronous operation.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ValueTask{TResult}"/> representing the asynchronous operation,
-    /// with a result of the 16-bit signed integer (short) read from the stream.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the method is called on a disposed stream.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly while reading.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if there is an error during the read operation.
-    /// </exception>
-    public async ValueTask<short> ReadShortAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(sizeof(short), cancellationToken).ConfigureAwait(false);
-        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(short)));
-    }
-
-    /// <summary>
-    /// Reads a 64-bit signed integer (long) from the stream asynchronously.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> used to monitor for cancellation requests
-    /// while performing the asynchronous operation.
-    /// </param>
-    /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the 64-bit signed integer
-    /// read from the stream in host byte order.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the method is called after the <see cref="NbtReader"/> is disposed.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream does not contain enough bytes to read a 64-bit signed integer.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs while reading from the stream.
-    /// </exception>
-    public async ValueTask<long> ReadLongAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(sizeof(long), cancellationToken).ConfigureAwait(false);
-        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(long)));
-    }
-
-    /// <summary>
-    /// Reads a variable-length integer (VarInt) asynchronously from the stream.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the read operation.
-    /// </param>
-    /// <returns>
-    /// A task representing the asynchronous operation. The result contains the integer value read.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the NbtReader instance has been disposed.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs during the read operation.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the end of the stream is reached before the full VarInt can be read.
-    /// </exception>
-    public async ValueTask<int> ReadVarIntAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        (_, int value) = await ReadVarIntWithBytesReadAsync(cancellationToken).ConfigureAwait(false);
-        return value;
-    }
-
-    /// <summary>
-    /// Reads a variable-length integer from the stream asynchronously,
-    /// returning both the value and the total number of bytes read.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the operation.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ValueTask{TResult}"/> that represents the asynchronous operation, containing a value tuple.
-    /// The tuple consists of an integer representing the number of bytes read and an integer representing the value of the variable-length integer.
-    /// </returns>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the underlying stream has already been disposed.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs while reading the stream.
-    /// </exception>
-    public async ValueTask<(int BytesRead, int Value)> ReadVarIntWithBytesReadAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        var numRead = 0;
-        var result = 0;
-        byte readByte;
-        var shift = 0;
-        var buffer = new byte[MaxVarIntSize]; 
-        var bytesConsumedFromBuffer = 0;
-        var bytesReadIntoBuffer = 0;
-
-        do
+        try
         {
-            if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
-
-            if (bytesConsumedFromBuffer >= bytesReadIntoBuffer)
-            {
-                bytesReadIntoBuffer = await _stream.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
-                if (bytesReadIntoBuffer == 0) throw new EndOfStreamException("Stream ended while reading VarInt.");
-                bytesConsumedFromBuffer = 0; 
-            }
-
-            readByte = buffer[bytesConsumedFromBuffer++];
-            int value = readByte & 0x7f;
-            result |= value << shift;
-            shift += 7;
-            numRead++;
-
-        } while ((readByte & 0x80) != 0);
-
-        return (numRead, result);
+            return await Task.Run(ReadStringInternal, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ObjectDisposedException)
+        {
+            throw new AggregateException("Error during async string read.", ex);
+        }
     }
 
-    /// <summary>
-    /// Reads a specified number of bytes asynchronously from the underlying stream.
-    /// </summary>
-    /// <param name="length">
-    /// The number of bytes to read. Must be a non-negative integer.
-    /// If zero, an empty byte array is returned.
-    /// </param>
-    /// <param name="cancellationToken">
-    /// A token to monitor for cancellation requests. If the operation is canceled, a <see cref="OperationCanceledException"/> may be thrown.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ValueTask{TResult}"/> containing a byte array with the requested number of bytes.
-    /// If the stream ends prematurely or the length is invalid, appropriate exceptions may be thrown.
-    /// </returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown if the length is negative.
-    /// </exception>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the stream ends unexpectedly before the requested number of bytes can be read.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the stream has already been disposed.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs during the async read operation.
-    /// </exception>
-    public async ValueTask<byte[]> ReadAsync(int length, CancellationToken cancellationToken = default)
+    /// Asynchronously reads exactly `length` bytes into a new byte array using stream's ReadExactlyAsync.
+    public async ValueTask<byte[]> ReadBytesAsync(int length, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
         switch (length)
@@ -789,36 +388,18 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         }
 
         var buffer = new byte[length];
-        await _stream.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _stream.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw new EndOfStreamException($"Expected {length} bytes, but stream ended prematurely.", ex);
+        }
+
         return buffer;
     }
-
-    /// <summary>
-    /// Asynchronously reads a single byte from the underlying stream, ensuring that the operation completes successfully.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A <see cref="CancellationToken"/> that can be used to cancel the asynchronous operation.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ValueTask{TResult}"/> that represents the asynchronous operation.
-    /// The result is the byte that was read from the stream.
-    /// </returns>
-    /// <exception cref="EndOfStreamException">
-    /// Thrown if the end of the stream is reached unexpectedly while attempting to read the byte.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// Thrown if the method is called on a disposed reader.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Thrown if an I/O error occurs during the read operation.
-    /// </exception>
-    public async ValueTask<byte> ReadByteCheckedAsync(CancellationToken cancellationToken = default)
-    {
-        CheckDisposed();
-        await ReadToPrimitiveBufferAsync(1, cancellationToken).ConfigureAwait(false);
-        return _primitiveReadBuffer[0]; 
-    }
-
+    
     private void CheckDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -826,15 +407,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private int ReadIntCheckedLength()
     {
-        int length = ReadInt();
-        if (length < 0) throw new IOException($"Invalid array/byte array length: {length}");
-        return length;
-    }
-
-    private async ValueTask<int> ReadIntCheckedLengthAsync(CancellationToken cancellationToken = default)
-    {
-        int length = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
-        if (length < 0) throw new IOException($"Invalid array/byte array length: {length}");
+        int length = ReadIntInternal();
+        if (length < 0) throw new IOException($"Invalid array/list/string length encountered: {length}");
         return length;
     }
 
@@ -844,28 +418,56 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         if (b == -1) throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
         return (byte)b;
     }
-    
+
     private void ReadToPrimitiveBuffer(int count)
     {
-        var totalRead = 0;
-        while (totalRead < count)
+        try
         {
-            int bytesRead = _stream.Read(_primitiveReadBuffer, totalRead, count - totalRead);
-            if (bytesRead == 0) throw new EndOfStreamException($"Expected {count} bytes, but stream ended after {totalRead} bytes.");
-            totalRead += bytesRead;
+            _stream.ReadExactly(_primitiveReadBuffer.AsSpan(0, count));
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw new EndOfStreamException($"Expected {count} bytes for primitive type, but stream ended.", ex);
         }
     }
 
-    private async ValueTask ReadToPrimitiveBufferAsync(int count, CancellationToken cancellationToken)
+    private static int GetPrimitiveSize(NbtTagType type) => type switch
     {
-        await _stream.ReadExactlyAsync(_primitiveReadBuffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+        NbtTagType.Byte => sizeof(byte),
+        NbtTagType.Short => sizeof(short),
+        NbtTagType.Int => sizeof(int),
+        NbtTagType.Long => sizeof(long),
+        NbtTagType.Float => sizeof(float),
+        NbtTagType.Double => sizeof(double),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), "Not a fixed-size primitive type.")
+    };
+    
+    private static NbtTag CreatePrimitiveTag(NbtTagType type, string? name, ReadOnlySpan<byte> data, bool needsSwap)
+    {
+        return type switch
+        {
+            NbtTagType.Byte => new ByteTag(name, data[0]),
+            NbtTagType.Short => new ShortTag(name,
+                needsSwap ? BinaryPrimitives.ReadInt16BigEndian(data) : MemoryMarshal.Read<short>(data)),
+            NbtTagType.Int => new IntTag(name,
+                needsSwap ? BinaryPrimitives.ReadInt32BigEndian(data) : MemoryMarshal.Read<int>(data)),
+            NbtTagType.Long => new LongTag(name,
+                needsSwap ? BinaryPrimitives.ReadInt64BigEndian(data) : MemoryMarshal.Read<long>(data)),
+            NbtTagType.Float => new FloatTag(name,
+                needsSwap ? BinaryPrimitives.ReadSingleBigEndian(data) : MemoryMarshal.Read<float>(data)),
+            NbtTagType.Double => new DoubleTag(name,
+                needsSwap ? BinaryPrimitives.ReadDoubleBigEndian(data) : MemoryMarshal.Read<double>(data)),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), "Not a primitive type.")
+        };
     }
 
+
     /// <summary>
-    /// Releases all resources used by the <see cref="NbtReader"/> instance.
+    /// Releases the resources used by the <see cref="NbtReader"/>.
     /// </summary>
     /// <remarks>
-    /// This method invokes the internal <see cref="Dispose(bool)"/> method to finalize the cleanup process and suppresses the finalization for garbage collection.
+    /// This method calls <see cref="Dispose(bool)"/> to perform the actual resource cleanup and suppresses finalization of the object.
+    /// Ensures proper cleanup of unmanaged resources and optionally disposes of managed resources depending on the implementation of the derived class.
     /// </remarks>
     public void Dispose()
     {
@@ -874,26 +476,34 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     }
 
     /// <summary>
-    /// Asynchronously disposes the resources used by the <see cref="NbtReader"/> instance.
+    /// Asynchronously releases the unmanaged resources used by the <see cref="NbtReader"/>
+    /// and optionally disposes of the managed resources.
     /// </summary>
     /// <returns>
-    /// A <see cref="ValueTask"/> representing the asynchronous operation of releasing unmanaged resources and optionally other resources.
+    /// A task that represents the asynchronous dispose operation.
     /// </returns>
+    /// <remarks>
+    /// After calling this method, the object is considered disposed and cannot be used further.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         await DisposeAsyncCore().ConfigureAwait(false);
-        Dispose(false);
+        Dispose(disposing: false);
         GC.SuppressFinalize(this);
     }
 
     /// <summary>
-    /// Releases all resources used by the <see cref="NbtReader"/> instance.
+    /// Releases the resources used by the <see cref="NbtReader"/>.
     /// </summary>
     /// <param name="disposing">
-    /// A boolean indicating whether the method is being called from a Dispose method
-    /// (true) or from a finalizer (false). If true, managed resources should be released
-    /// and finalization suppressed. If false, only unmanaged resources should be released.
+    /// Indicates whether the method is being called from a disposing context.
+    /// If true, managed and unmanaged resources will be released. If false, only unmanaged resources will be released.
     /// </param>
+    /// <remarks>
+    /// Ensures proper cleanup of unmanaged resources and optionally disposes of managed resources.
+    /// If <paramref name="disposing"/> is true, this will release managed resources, but only when <c>leaveOpen</c> is false.
+    /// Suppresses the finalizer to prevent further attempts to release resources.
+    /// </remarks>
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed) return;
@@ -901,18 +511,31 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         {
             if (!leaveOpen)
             {
-                _stream?.Dispose();
+                try
+                {
+                    _stream?.Dispose();
+                }
+                catch (ObjectDisposedException)
+                {
+                    /* Ignore */
+                }
             }
         }
+
         _disposed = true;
     }
 
     /// <summary>
-    /// Executes core asynchronous disposal logic for the instance.
+    /// Performs asynchronous cleanup operations for the NbtReader.
     /// </summary>
+    /// <remarks>
+    /// This method disposes the underlying stream of the NbtReader asynchronously if it was not specified to be left open.
+    /// It is invoked by the <see cref="DisposeAsync"/> method during asynchronous disposal.
+    /// </remarks>
     /// <returns>
-    /// A <see cref="ValueTask"/> that represents the asynchronous disposal operation.
+    /// A <see cref="ValueTask"/> representing the asynchronous disposal operation.
     /// </returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this method is called after the NbtReader has already been disposed.</exception>
     protected virtual async ValueTask DisposeAsyncCore()
     {
         if (_disposed) return;
@@ -921,12 +544,6 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             await _stream.DisposeAsync().ConfigureAwait(false);
         }
     }
-    
-    /// <summary>
-    /// Implements the finalizer method for the NbtReader, ensuring that unmanaged resources are released if <see cref="Dispose()"/> is not explicitly called.
-    /// </summary>
-    /// <remarks>
-    /// This method is called by the garbage collector. It invokes the <see cref="Dispose(bool)"/> method with the <c>disposing</c> parameter set to <c>false</c>.
-    /// </remarks>
+
     ~NbtReader() => Dispose(false);
 }
