@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.Net;
 using NoNBT.Tags;
 
@@ -28,6 +29,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private bool _disposed;
+    private readonly byte[] _primitiveReadBuffer = new byte[8];
 
     private const int MaxVarIntSize = 5;
 
@@ -129,8 +131,17 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private int[] ReadIntArray()
     {
         int length = ReadIntCheckedLength();
+        if (length == 0) return [];
+
+        int byteCount = length * sizeof(int);
+        byte[] buffer = Read(byteCount);
+    
         var result = new int[length];
-        for (var i = 0; i < length; i++) result[i] = ReadInt();
+        Span<byte> bufferSpan = buffer.AsSpan();
+        for (var i = 0; i < length; i++)
+        {
+            result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
+        }
         return result;
     }
 
@@ -178,7 +189,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public int ReadInt()
     {
         CheckDisposed();
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt32(Read(sizeof(int)), 0));
+        ReadToPrimitiveBuffer(sizeof(int));
+        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(int)));
     }
 
     /// <summary>
@@ -199,7 +211,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public float ReadFloat()
     {
         CheckDisposed();
-        return NetworkToHostOrder(BitConverter.ToSingle(Read(sizeof(float)), 0));
+        ReadToPrimitiveBuffer(sizeof(float));
+        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(float)));
     }
 
     /// <summary>
@@ -220,7 +233,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public double ReadDouble()
     {
         CheckDisposed();
-        return NetworkToHostOrder(Read(sizeof(double)));
+        ReadToPrimitiveBuffer(sizeof(double));
+        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(double)));
     }
 
     /// <summary>
@@ -241,7 +255,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public short ReadShort()
     {
         CheckDisposed();
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt16(Read(sizeof(short)), 0));
+        ReadToPrimitiveBuffer(sizeof(short));
+        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(short)));
     }
 
     /// <summary>
@@ -262,7 +277,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public long ReadLong()
     {
         CheckDisposed();
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt64(Read(sizeof(long)), 0));
+        ReadToPrimitiveBuffer(sizeof(long));
+        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(long)));
     }
 
     /// <summary>
@@ -455,13 +471,29 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return compound;
     }
 
-    private async ValueTask<byte[]> ReadByteArrayAsync(CancellationToken cancellationToken = default) => await ReadAsync(await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+    private async ValueTask<byte[]> ReadByteArrayAsync(CancellationToken cancellationToken = default)
+    {
+        int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
+        if (length == 0) return [];
+
+        byte[] buffer = await ReadAsync(length, cancellationToken).ConfigureAwait(false);
+        return buffer;
+    }
 
     private async ValueTask<int[]> ReadIntArrayAsync(CancellationToken cancellationToken = default)
     {
         int length = await ReadIntCheckedLengthAsync(cancellationToken).ConfigureAwait(false);
+        if (length == 0) return [];
+
+        int byteCount = length * sizeof(int);
+        byte[] buffer = await ReadAsync(byteCount, cancellationToken).ConfigureAwait(false); 
+    
         var result = new int[length];
-        for (var i = 0; i < length; i++) result[i] = await ReadIntAsync(cancellationToken).ConfigureAwait(false);
+        Span<byte> bufferSpan = buffer.AsSpan();
+        for (var i = 0; i < length; i++)
+        {
+            result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
+        }
         return result;
     }
 
@@ -519,8 +551,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<int> ReadIntAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = await ReadAsync(sizeof(int), cancellationToken).ConfigureAwait(false);
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buffer, 0));
+        await ReadToPrimitiveBufferAsync(sizeof(int), cancellationToken).ConfigureAwait(false);
+        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(int)));
     }
 
     /// <summary>
@@ -544,8 +576,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<float> ReadFloatAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = await ReadAsync(sizeof(float), cancellationToken).ConfigureAwait(false);
-        return NetworkToHostOrder(BitConverter.ToSingle(buffer, 0));
+        await ReadToPrimitiveBufferAsync(sizeof(float), cancellationToken).ConfigureAwait(false);
+        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(float)));
     }
 
     /// <summary>
@@ -569,8 +601,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<double> ReadDoubleAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = await ReadAsync(sizeof(double), cancellationToken).ConfigureAwait(false);
-        return NetworkToHostOrder(buffer);
+        await ReadToPrimitiveBufferAsync(sizeof(double), cancellationToken).ConfigureAwait(false);
+        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(double)));
     }
 
     /// <summary>
@@ -595,8 +627,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<short> ReadShortAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = await ReadAsync(sizeof(short), cancellationToken).ConfigureAwait(false);
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt16(buffer, 0));
+        await ReadToPrimitiveBufferAsync(sizeof(short), cancellationToken).ConfigureAwait(false);
+        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(short)));
     }
 
     /// <summary>
@@ -622,8 +654,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<long> ReadLongAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = await ReadAsync(sizeof(long), cancellationToken).ConfigureAwait(false);
-        return IPAddress.NetworkToHostOrder(BitConverter.ToInt64(buffer, 0));
+        await ReadToPrimitiveBufferAsync(sizeof(long), cancellationToken).ConfigureAwait(false);
+        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer.AsSpan(0, sizeof(long)));
     }
 
     /// <summary>
@@ -673,27 +705,31 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         CheckDisposed();
         var numRead = 0;
         var result = 0;
-        byte[] singleByteBuffer = ArrayPool<byte>.Shared.Rent(1);
-        try
+        byte readByte;
+        var shift = 0;
+        var buffer = new byte[MaxVarIntSize]; 
+        var bytesConsumedFromBuffer = 0;
+        var bytesReadIntoBuffer = 0;
+
+        do
         {
-            byte readByte;
-            do
+            if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
+
+            if (bytesConsumedFromBuffer >= bytesReadIntoBuffer)
             {
-                if (numRead >= MaxVarIntSize) throw new IOException("VarInt is too big");
+                bytesReadIntoBuffer = await _stream.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
+                if (bytesReadIntoBuffer == 0) throw new EndOfStreamException("Stream ended while reading VarInt.");
+                bytesConsumedFromBuffer = 0; 
+            }
 
-                int bytesReadFromStream = await _stream.ReadAsync(singleByteBuffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
-                if (bytesReadFromStream == 0) throw new EndOfStreamException("Stream ended while reading VarInt.");
-                readByte = singleByteBuffer[0];
+            readByte = buffer[bytesConsumedFromBuffer++];
+            int value = readByte & 0x7f;
+            result |= value << shift;
+            shift += 7;
+            numRead++;
 
-                int value = readByte & 0x7f;
-                result |= value << (7 * numRead);
-                numRead++;
-            } while ((readByte & 0x80) != 0);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(singleByteBuffer);
-        }
+        } while ((readByte & 0x80) != 0);
+
         return (numRead, result);
     }
 
@@ -761,22 +797,9 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public async ValueTask<byte> ReadByteCheckedAsync(CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
-        try
-        {
-            await _stream.ReadExactlyAsync(buffer.AsMemory(0,1), cancellationToken).ConfigureAwait(false);
-            return buffer[0];
-        }
-        catch (EndOfStreamException)
-        {
-             throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+        await ReadToPrimitiveBufferAsync(1, cancellationToken).ConfigureAwait(false);
+        return _primitiveReadBuffer[0]; 
     }
-    
 
     private void CheckDisposed()
     {
@@ -803,18 +826,21 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         if (b == -1) throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
         return (byte)b;
     }
-
-    private static double NetworkToHostOrder(byte[] data)
+    
+    private void ReadToPrimitiveBuffer(int count)
     {
-        if (BitConverter.IsLittleEndian) Array.Reverse(data);
-        return BitConverter.ToDouble(data, 0);
+        var totalRead = 0;
+        while (totalRead < count)
+        {
+            int bytesRead = _stream.Read(_primitiveReadBuffer, totalRead, count - totalRead);
+            if (bytesRead == 0) throw new EndOfStreamException($"Expected {count} bytes, but stream ended after {totalRead} bytes.");
+            totalRead += bytesRead;
+        }
     }
 
-    private static float NetworkToHostOrder(float network)
+    private async ValueTask ReadToPrimitiveBufferAsync(int count, CancellationToken cancellationToken)
     {
-        byte[] bytes = BitConverter.GetBytes(network);
-        if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-        return BitConverter.ToSingle(bytes, 0);
+        await _stream.ReadExactlyAsync(_primitiveReadBuffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

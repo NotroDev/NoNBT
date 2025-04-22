@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoNBT", "NoNBT\NoNBT.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoNBT.Tests", "NoNBT.Tests\NoNBT.Tests.csproj", "{3A4345E8-9C0E-410E-BDE7-03E8FF6E1935}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoNBT.Benchmarks", "NoNBT.Benchmarks\NoNBT.Benchmarks.csproj", "{24F12702-21DB-4D16-9F4B-380DCF184F9B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{3A4345E8-9C0E-410E-BDE7-03E8FF6E1935}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3A4345E8-9C0E-410E-BDE7-03E8FF6E1935}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3A4345E8-9C0E-410E-BDE7-03E8FF6E1935}.Release|Any CPU.Build.0 = Release|Any CPU
+		{24F12702-21DB-4D16-9F4B-380DCF184F9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24F12702-21DB-4D16-9F4B-380DCF184F9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24F12702-21DB-4D16-9F4B-380DCF184F9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24F12702-21DB-4D16-9F4B-380DCF184F9B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

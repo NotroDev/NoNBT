@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.Net;
 using NoNBT.Tags;
 
@@ -103,7 +104,23 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private void WriteIntArrayPayload(IntArrayTag tag)
     {
         WriteInt(tag.Value.Length);
-        foreach (int value in tag.Value) WriteInt(value);
+        int byteCount = tag.Value.Length * sizeof(int);
+        if (byteCount == 0) return;
+
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(byteCount); 
+        try
+        {
+            Span<byte> bufferSpan = buffer.AsSpan(0, byteCount);
+            for (var i = 0; i < tag.Value.Length; i++)
+            {
+                BinaryPrimitives.WriteInt32BigEndian(bufferSpan[(i * sizeof(int))..], tag.Value[i]);
+            }
+            Write(buffer.AsSpan(0, byteCount));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private void WriteLongArrayPayload(LongArrayTag tag)
@@ -132,9 +149,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void WriteInt(int value)
     {
         CheckDisposed();
-        int networkValue = IPAddress.HostToNetworkOrder(value);
-        byte[] bytes = BitConverter.GetBytes(networkValue);
-        Write(bytes);
+        Span<byte> buffer = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(buffer, value);
+        _stream.Write(buffer);
     }
 
     /// Writes a single-precision floating-point value to the underlying stream.
@@ -143,8 +160,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void WriteFloat(float value)
     {
         CheckDisposed();
-        byte[] bytes = BitConverter.GetBytes(HostToNetworkOrder(value));
-        Write(bytes);
+        Span<byte> buffer = stackalloc byte[sizeof(float)];
+        BinaryPrimitives.WriteSingleBigEndian(buffer, value);
+        _stream.Write(buffer);
     }
 
     /// Writes a double-precision floating-point number to the underlying stream.
@@ -153,8 +171,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void WriteDouble(double value)
     {
         CheckDisposed();
-        byte[] bytes = HostToNetworkOrder(value);
-        Write(bytes);
+        Span<byte> buffer = stackalloc byte[sizeof(double)];
+        BinaryPrimitives.WriteDoubleBigEndian(buffer, value);
+        _stream.Write(buffer);
     }
 
     /// Writes a short value to the underlying stream in big-endian byte order.
@@ -163,9 +182,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void WriteShort(short value)
     {
         CheckDisposed();
-        short networkValue = IPAddress.HostToNetworkOrder(value);
-        byte[] bytes = BitConverter.GetBytes(networkValue);
-        Write(bytes);
+        Span<byte> buffer = stackalloc byte[sizeof(short)];
+        BinaryPrimitives.WriteInt16BigEndian(buffer, value);
+        _stream.Write(buffer);
     }
 
     /// Writes a 64-bit signed integer to the underlying stream in network byte order.
@@ -174,9 +193,9 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void WriteLong(long value)
     {
         CheckDisposed();
-        long networkValue = IPAddress.HostToNetworkOrder(value);
-        byte[] bytes = BitConverter.GetBytes(networkValue);
-        Write(bytes);
+        Span<byte> buffer = stackalloc byte[sizeof(long)];
+        BinaryPrimitives.WriteInt64BigEndian(buffer, value);
+        _stream.Write(buffer);
     }
 
     /// Writes a single byte to the underlying stream.
@@ -191,10 +210,10 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// Writes the specified byte array to the underlying stream.
     /// <param name="data">The data to write to the stream. Must not be null and must have a length greater than zero.</param>
     /// <exception cref="ObjectDisposedException">Thrown when the underlying stream has already been disposed.</exception>
-    public void Write(byte[] data)
+    public void Write(ReadOnlySpan<byte> data)
     {
         CheckDisposed();
-        if (data.Length > 0) _stream.Write(data, 0, data.Length);
+        if (!data.IsEmpty) _stream.Write(data);
     }
 
     /// Asynchronously writes an NBT tag to the underlying stream.
@@ -261,19 +280,62 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private async ValueTask WriteByteArrayPayloadAsync(ByteArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
-        await WriteAsync(tag.Value, cancellationToken).ConfigureAwait(false);
+        if (tag.Value.Length == 0) return;
+
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(tag.Value.Length);
+        try
+        {
+            tag.Value.CopyTo(buffer.AsSpan(0, tag.Value.Length));
+            await WriteAsync(buffer.AsMemory(0, tag.Value.Length), cancellationToken).ConfigureAwait(false); 
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private async ValueTask WriteIntArrayPayloadAsync(IntArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
-        foreach (int value in tag.Value) await WriteIntAsync(value, cancellationToken).ConfigureAwait(false);
+        int byteCount = tag.Value.Length * sizeof(int);
+        if (byteCount == 0) return;
+
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
+        {
+            Span<byte> bufferSpan = buffer.AsSpan(0, byteCount);
+            for (var i = 0; i < tag.Value.Length; i++)
+            {
+                BinaryPrimitives.WriteInt32BigEndian(bufferSpan[(i * sizeof(int))..], tag.Value[i]);
+            }
+            await WriteAsync(buffer.AsMemory(0, byteCount), cancellationToken).ConfigureAwait(false); 
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private async ValueTask WriteLongArrayPayloadAsync(LongArrayTag tag, CancellationToken cancellationToken = default)
     {
         await WriteIntAsync(tag.Value.Length, cancellationToken).ConfigureAwait(false);
-        foreach (long value in tag.Value) await WriteLongAsync(value, cancellationToken).ConfigureAwait(false);
+        int byteCount = tag.Value.Length * sizeof(long);
+        if (byteCount == 0) return;
+        
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
+        {
+            Span<byte> bufferSpan = buffer.AsSpan(0, byteCount);
+            for (var i = 0; i < tag.Value.Length; i++)
+            {
+                BinaryPrimitives.WriteInt64BigEndian(bufferSpan[(i * sizeof(long))..], tag.Value[i]);
+            }
+            await WriteAsync(buffer.AsMemory(0, byteCount), cancellationToken).ConfigureAwait(false); 
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// Writes a string to the underlying stream in Modified UTF-8 format.
@@ -289,8 +351,15 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         byte[] stringBytes = ModifiedUtf8.GetBytes(value);
         if (stringBytes.Length > short.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(value), $"String length in bytes ({stringBytes.Length}) exceeds maximum allowed ({short.MaxValue}).");
-        await WriteShortAsync((short)stringBytes.Length, cancellationToken).ConfigureAwait(false);
-        await WriteAsync(stringBytes, cancellationToken).ConfigureAwait(false);
+
+        var length = (short)stringBytes.Length;
+        byte[] lengthBytes = BitConverter.GetBytes(IPAddress.HostToNetworkOrder(length));
+
+        var combinedBuffer = new byte[sizeof(short) + stringBytes.Length];
+        Buffer.BlockCopy(lengthBytes, 0, combinedBuffer, 0, sizeof(short));
+        Buffer.BlockCopy(stringBytes, 0, combinedBuffer, sizeof(short), stringBytes.Length);
+
+        await WriteAsync(combinedBuffer, cancellationToken).ConfigureAwait(false); 
     }
 
     /// Asynchronously writes a 32-bit integer to the underlying stream in network byte order.
@@ -314,7 +383,7 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public ValueTask WriteFloatAsync(float value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] bytes = BitConverter.GetBytes(HostToNetworkOrder(value));
+        byte[] bytes = HostToNetworkOrder(value);
         return WriteAsync(bytes, cancellationToken);
     }
 
@@ -362,19 +431,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// <returns>A task that represents the asynchronous write operation.</returns>
     /// <exception cref="ObjectDisposedException">Thrown if the writer has already been disposed.</exception>
     /// <exception cref="InvalidOperationException">Thrown if the underlying stream does not support writing.</exception>
-    public async ValueTask WriteByteAsync(byte value, CancellationToken cancellationToken = default)
+    public ValueTask WriteByteAsync(byte value, CancellationToken cancellationToken = default)
     {
         CheckDisposed();
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
-        try
-        {
-            buffer[0] = value;
-            await WriteAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+        byte[] buffer = [value]; 
+        return WriteAsync(buffer.AsMemory(), cancellationToken);
     }
 
     /// Writes the specified data asynchronously to the underlying stream.
@@ -408,11 +469,11 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return bytes;
     }
 
-    private static float HostToNetworkOrder(float host)
+    private static byte[] HostToNetworkOrder(float host)
     {
         byte[] bytes = BitConverter.GetBytes(host);
         if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-        return BitConverter.ToSingle(bytes, 0);
+        return bytes;
     }
 
     /// Releases all resources used by the NbtWriter instance.
