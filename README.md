@@ -16,13 +16,13 @@ While NoNBT isn't designed to be a comprehensive NBT library, it covers all the 
 There is **no** SNBT (Stringified NBT) support in this library. If you need to parse SNBT, consider using a different library or implement it yourself.
 
 ## Capabilities
-*   **Read & Write NBT Data:** Supports reading from and writing to streams.
-*   **Full Tag Support:** Implements all standard NBT tags.
-*   **Modified UTF-8:** Correctly encodes and decodes strings using MUTF-8 used by Minecraft.
-*   **Simple API:** Easy-to-use `NbtReader` and `NbtWriter` classes.
-*   **Asynchronous API**: Full async/await support with ValueTask-based methods.
-*   **Object Model:** Represents NBT data using a clear hierarchy of `NbtTag` derived classes.
-*   **JSON Conversion:** Basic `ToJson()` method on tags for debugging/testing purposes.
+*   **Read & Write NBT Data:** Supports reading from and writing to streams
+*   **Full Tag Support:** Implements all standard NBT tags
+*   **Modified UTF-8:** Correctly encodes and decodes strings using MUTF-8 used by Minecraft
+*   **Simple API:** Easy-to-use `NbtReader` and `NbtWriter` classes
+*   **Asynchronous API**: Supports async methods
+*   **Object Model:** Represents NBT data using a clear hierarchy of `NbtTag` derived classes
+*   **JSON Conversion:** Basic `ToJson()` method on tags for debugging/testing purposes
 
 ## Installation
 
