@@ -102,9 +102,9 @@ public static class ModifiedUtf8
             return true;
         }
 
-        value = string.Create(charCount, bytes.ToArray(), (chars, state) =>
+        value = string.Create(charCount, bytes, (chars, stateBytes) =>
         {
-            GetStringInternal(state, chars);
+            GetStringInternal(stateBytes, chars);
         });
 
         return true;
@@ -137,18 +137,19 @@ public static class ModifiedUtf8
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int GetByteCount(ReadOnlySpan<char> str)
     {
-        int byteCount = 0;
+        var byteCount = 0;
         
         foreach (char c in str)
         {
             if (c == 0)
                 byteCount += 2;
-            else if (c is >= '\u0001' and <= '\u007F')
-                byteCount += 1;
-            else if (c <= '\u07FF')
-                byteCount += 2;
             else
-                byteCount += 3;
+                byteCount += c switch
+                {
+                    >= '\u0001' and <= '\u007F' => 1,
+                    <= '\u07FF' => 2,
+                    _ => 3
+                };
         }
         
         return byteCount;
@@ -169,20 +170,20 @@ public static class ModifiedUtf8
                 bytes[position++] = 0xC0;
                 bytes[position++] = 0x80;
             }
-            else if (c is >= '\u0001' and <= '\u007F')
+            else switch (c)
             {
-                bytes[position++] = (byte)c;
-            }
-            else if (c <= '\u07FF')
-            {
-                bytes[position++] = (byte)(0xC0 | ((c >> 6) & 0x1F));
-                bytes[position++] = (byte)(0x80 | (c & 0x3F));
-            }
-            else
-            {
-                bytes[position++] = (byte)(0xE0 | ((c >> 12) & 0x0F));
-                bytes[position++] = (byte)(0x80 | ((c >> 6) & 0x3F));
-                bytes[position++] = (byte)(0x80 | (c & 0x3F));
+                case >= '\u0001' and <= '\u007F':
+                    bytes[position++] = (byte)c;
+                    break;
+                case <= '\u07FF':
+                    bytes[position++] = (byte)(0xC0 | ((c >> 6) & 0x1F));
+                    bytes[position++] = (byte)(0x80 | (c & 0x3F));
+                    break;
+                default:
+                    bytes[position++] = (byte)(0xE0 | ((c >> 12) & 0x0F));
+                    bytes[position++] = (byte)(0x80 | ((c >> 6) & 0x3F));
+                    bytes[position++] = (byte)(0x80 | (c & 0x3F));
+                    break;
             }
         }
         

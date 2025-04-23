@@ -1,4 +1,5 @@
-﻿using System.Buffers.Binary;
+﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Text;
 using NoNBT.Tags;
@@ -103,18 +104,13 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             or NbtTagType.Double)
         {
             int elementSize = GetPrimitiveSize(listType);
-            long totalBytes = (long)count * elementSize;
-
-            if (totalBytes > 1024 * 1024 * 512)
-                throw new IOException($"TAG_List payload size ({totalBytes} bytes) exceeds safety limit.");
-
-            byte[] listData = ReadBytes((int)totalBytes);
             bool needsSwap = BitConverter.IsLittleEndian;
 
             for (var i = 0; i < count; i++)
             {
-                ReadOnlySpan<byte> elementData = listData.AsSpan(i * elementSize, elementSize);
-                NbtTag element = CreatePrimitiveTag(listType, null, elementData, needsSwap);
+                ReadToPrimitiveBuffer(elementSize);
+                NbtTag element = CreatePrimitiveTag(listType, null, _primitiveReadBuffer.AsSpan(0, elementSize),
+                    needsSwap);
                 list.Add(element);
             }
         }
@@ -167,26 +163,35 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         if (byteCount is < 0 or > 1024 * 1024 * 512)
             throw new IOException($"IntArray size ({byteCount} bytes) is invalid or exceeds safety limits.");
 
-        byte[] buffer = ReadBytes(byteCount);
-
-        bool needsSwap = BitConverter.IsLittleEndian;
-        var result = new int[length];
-
-        if (needsSwap)
+        byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
         {
-            for (var i = 0; i < length; i++)
+            Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
+            _stream.ReadExactly(bufferSpan);
+
+            bool needsSwap = BitConverter.IsLittleEndian;
+            var result = new int[length];
+
+            if (needsSwap)
             {
-                result[i] = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(i * sizeof(int)));
+                for (var i = 0; i < length; i++)
+                {
+                    result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
+                }
             }
+            else
+            {
+                MemoryMarshal.Cast<byte, int>(bufferSpan).CopyTo(result);
+            }
+
+            return new IntArrayTag(name, result);
         }
-        else
+        finally
         {
-            MemoryMarshal.Cast<byte, int>(buffer).CopyTo(result);
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
         }
-
-        return new IntArrayTag(name, result);
     }
-
+    
     private LongArrayTag ReadLongArrayPayload(string? name)
     {
         int length = ReadIntCheckedLength();
@@ -196,24 +201,33 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         if (byteCount is < 0 or > 1024 * 1024 * 512)
             throw new IOException($"LongArray size ({byteCount} bytes) is invalid or exceeds safety limits.");
 
-        byte[] buffer = ReadBytes(byteCount);
-
-        bool needsSwap = BitConverter.IsLittleEndian;
-        var result = new long[length];
-
-        if (needsSwap)
+        byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
         {
-            for (var i = 0; i < length; i++)
+            Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
+            _stream.ReadExactly(bufferSpan);
+
+            bool needsSwap = BitConverter.IsLittleEndian;
+            var result = new long[length];
+
+            if (needsSwap)
             {
-                result[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(i * sizeof(long)));
+                for (var i = 0; i < length; i++)
+                {
+                    result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
+                }
             }
-        }
-        else
-        {
-            MemoryMarshal.Cast<byte, long>(buffer).CopyTo(result);
-        }
+            else
+            {
+                MemoryMarshal.Cast<byte, long>(bufferSpan).CopyTo(result);
+            }
 
-        return new LongArrayTag(name, result);
+            return new LongArrayTag(name, result);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
     }
 
     /// <summary>
@@ -399,7 +413,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
         return buffer;
     }
-    
+
     private void CheckDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -441,7 +455,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         NbtTagType.Double => sizeof(double),
         _ => throw new ArgumentOutOfRangeException(nameof(type), "Not a fixed-size primitive type.")
     };
-    
+
     private static NbtTag CreatePrimitiveTag(NbtTagType type, string? name, ReadOnlySpan<byte> data, bool needsSwap)
     {
         return type switch
