@@ -25,7 +25,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// </summary>
     /// <param name="named">
     /// If true, expects a tag type byte, then a name (length-prefixed string), then the tag payload.
-    /// If false, expects only the tag payload (used for reading list elements).
+    /// If false, expects only the tag payload - the root compound is unnamed in newer versions.
     /// </param>
     /// <returns>
     /// The deserialized <see cref="NbtTag"/>, or null if <paramref name="named"/> is true and a TAG_End was encountered (signaling the end of a CompoundTag).
@@ -33,33 +33,16 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// <exception cref="EndOfStreamException">If the stream ends unexpectedly.</exception>
     /// <exception cref="IOException">If the data format is invalid (e.g., bad tag type, negative length, unexpected TAG_End).</exception>
     /// <exception cref="ObjectDisposedException"> If the reader is disposed. </exception>
-    public NbtTag? ReadTag(bool named = true)
+    public NbtTag? ReadTag(bool named = false)
     {
         CheckDisposed();
 
-        NbtTagType tagType;
-        string? name;
-
+        var tagType = (NbtTagType)ReadByte();
+        string? name = null;
+        
         if (named)
         {
-            int tagTypeByte = ReadByte();
-            switch (tagTypeByte)
-            {
-                case -1:
-                    throw new EndOfStreamException("Cannot read tag type; end of stream reached.");
-                case (int)NbtTagType.End:
-                    return null;
-                default:
-                    tagType = (NbtTagType)tagTypeByte;
-                    name = ReadStringInternal();
-                    break;
-            }
-        }
-        else
-        {
-            throw new ArgumentException(
-                "Reading a tag with named = false requires context (like TAG_List) to know the type. Use ReadTagPayload directly in such cases.",
-                nameof(named));
+            name = ReadStringInternal();
         }
 
         NbtTag tag = ReadTagPayload(tagType, name);
