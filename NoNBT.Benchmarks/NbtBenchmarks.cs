@@ -2,6 +2,7 @@
 using BenchmarkDotNet.Running;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Filters;
 using BenchmarkDotNet.Reports;
 using Perfolizer.Horology;
 
@@ -504,10 +505,19 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        var config = ManualConfig.Create(DefaultConfig.Instance)
+        ManualConfig config = ManualConfig.Create(DefaultConfig.Instance)
             .WithOptions(ConfigOptions.DisableOptimizationsValidator)
-            .WithSummaryStyle(SummaryStyle.Default.WithTimeUnit(TimeUnit.Nanosecond));
-        
+            .WithSummaryStyle(SummaryStyle.Default.WithTimeUnit(TimeUnit.Nanosecond))
+            .AddFilter(new SyncOnlyFilter());
+            
         BenchmarkRunner.Run<NbtBenchmarks>(config);
+    }
+}
+
+public class SyncOnlyFilter : IFilter
+{
+    public bool Predicate(BenchmarkCase benchmarkCase)
+    {
+        return !benchmarkCase.Descriptor.WorkloadMethod.Name.Contains("Async");
     }
 }

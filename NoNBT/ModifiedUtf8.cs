@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace NoNBT;
@@ -289,31 +290,52 @@ public static class ModifiedUtf8
     {
         if (string.IsNullOrEmpty(str))
             return string.Empty;
-            
+
         int byteCount = GetByteCount(str);
-        
+
         if (byteCount > ushort.MaxValue)
         {
             throw new FormatException($"Encoded string length ({byteCount} bytes) exceeds the NBT maximum of {ushort.MaxValue} bytes.");
         }
-        
-        Span<byte> bytes = byteCount <= StackAllocThreshold 
-            ? stackalloc byte[byteCount] 
-            : new byte[byteCount];
-            
-        GetBytesInternal(str, bytes);
-        
-        if (!TryGetCharCount(bytes, out int charCount))
+
+        byte[]? rentedBytes = null;
+        Span<byte> bytes = byteCount <= StackAllocThreshold
+            ? stackalloc byte[byteCount]
+            : (rentedBytes = ArrayPool<byte>.Shared.Rent(byteCount)).AsSpan(0, byteCount);
+
+        try
         {
-            throw new FormatException("Invalid Modified UTF-8 bytes produced during round trip.");
+            GetBytesInternal(str, bytes);
+
+            if (!TryGetCharCount(bytes, out int charCount))
+            {
+                throw new FormatException("Invalid Modified UTF-8 bytes produced during round trip.");
+            }
+
+            char[]? rentedChars = null;
+            Span<char> chars = charCount <= StackAllocThreshold
+                ? stackalloc char[charCount]
+                : (rentedChars = ArrayPool<char>.Shared.Rent(charCount)).AsSpan(0, charCount);
+
+            try
+            {
+                GetStringInternal(bytes, chars);
+                return new string(chars);
+            }
+            finally
+            {
+                if (rentedChars != null)
+                {
+                    ArrayPool<char>.Shared.Return(rentedChars);
+                }
+            }
         }
-        
-        Span<char> chars = charCount <= StackAllocThreshold 
-            ? stackalloc char[charCount] 
-            : new char[charCount];
-            
-        GetStringInternal(bytes, chars);
-        
-        return new string(chars);
+        finally
+        {
+            if (rentedBytes != null)
+            {
+                ArrayPool<byte>.Shared.Return(rentedBytes);
+            }
+        }
     }
 }

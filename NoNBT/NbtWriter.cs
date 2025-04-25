@@ -174,15 +174,40 @@ public class NbtWriter(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         CheckDisposed();
         ArgumentNullException.ThrowIfNull(value);
 
-        byte[] stringBytes = ModifiedUtf8.GetBytes(value);
-        if (stringBytes.Length > short.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(value),
-                $"String length in bytes ({stringBytes.Length}) exceeds maximum allowed ({short.MaxValue}).");
-
-        WriteShort((short)stringBytes.Length);
-        if (stringBytes.Length > 0)
+        if (value.Length == 0)
         {
-            Write(stringBytes.AsSpan());
+            WriteShort(0);
+            return;
+        }
+        
+        int maxByteCountEstimate = value.Length * 3 + 2;
+        byte[]? rentedBuffer = null;
+        Span<byte> bufferSpan = maxByteCountEstimate <= 512
+            ? stackalloc byte[maxByteCountEstimate]
+            : (rentedBuffer = ArrayPool<byte>.Shared.Rent(maxByteCountEstimate)).AsSpan();
+
+        try
+        {
+            int bytesWritten = ModifiedUtf8.GetBytes(value.AsSpan(), bufferSpan);
+
+            if (bytesWritten > short.MaxValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value),
+                    $"String length in bytes ({bytesWritten}) exceeds maximum allowed ({short.MaxValue}).");
+            }
+
+            WriteShort((short)bytesWritten);
+            if (bytesWritten > 0)
+            {
+                Write(bufferSpan[..bytesWritten]);
+            }
+        }
+        finally
+        {
+            if (rentedBuffer != null)
+            {
+                ArrayPool<byte>.Shared.Return(rentedBuffer);
+            }
         }
     }
 
