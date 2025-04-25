@@ -33,7 +33,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// <exception cref="EndOfStreamException">If the stream ends unexpectedly.</exception>
     /// <exception cref="IOException">If the data format is invalid (e.g., bad tag type, negative length, unexpected TAG_End).</exception>
     /// <exception cref="ObjectDisposedException"> If the reader is disposed. </exception>
-    public NbtTag? ReadTag(bool named = false)
+    public NbtTag? ReadTag(bool named = true)
     {
         CheckDisposed();
 
