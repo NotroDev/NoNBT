@@ -1,6 +1,8 @@
 ﻿using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace NoNBT;
 
@@ -51,15 +53,65 @@ public static class ModifiedUtf8
     /// <exception cref="ArgumentException">Thrown when the destination is too small</exception>
     public static int GetBytes(ReadOnlySpan<char> str, Span<byte> destination)
     {
-        if (str.IsEmpty)
-            return 0;
+        if (str.IsEmpty) return 0;
+    
+        ref char src = ref MemoryMarshal.GetReference(str);
+        ref byte dst = ref MemoryMarshal.GetReference(destination);
+        nint charIdx = 0, byteIdx = 0;
+        nint len = str.Length;
+
+        if (Vector128.IsHardwareAccelerated)
+        {
+            var asciiMax = Vector128.Create((ushort)0x007F);
+            for (; charIdx <= len - 8; charIdx += 8)
+            {
+                Vector128<ushort> v = Vector128.LoadUnsafe(ref Unsafe.As<char, ushort>(ref src), (nuint)charIdx);
+                if (!Vector128.LessThanOrEqualAll(v, asciiMax)) break;
             
-        int byteCount = GetByteCount(str);
-        
-        if (destination.Length < byteCount)
-            throw new ArgumentException("Destination buffer is too small", nameof(destination));
+                Vector128<byte> narrow = Vector128.Narrow(v, v);
+                narrow.GetLower().StoreUnsafe(ref dst, (nuint)byteIdx);
+                byteIdx += 8;
+            }
+        }
+
+        for (; charIdx < len; charIdx++)
+        {
+            char c = Unsafe.Add(ref src, charIdx);
             
-        return GetBytesInternal(str, destination);
+            if (c == 0)
+            {
+                if (byteIdx + 2 > destination.Length)
+                    throw new ArgumentException("Destination span is too small to hold the encoded bytes.");
+                
+                Unsafe.Add(ref dst, byteIdx++) = 0xC0;
+                Unsafe.Add(ref dst, byteIdx++) = 0x80;
+            }
+            else if (c <= 0x7F)
+            {
+                if (byteIdx + 1 > destination.Length)
+                    throw new ArgumentException("Destination span is too small to hold the encoded bytes.");
+                
+                Unsafe.Add(ref dst, byteIdx++) = (byte)c;
+            }
+            else if (c <= 0x7FF)
+            {
+                if (byteIdx + 2 > destination.Length)
+                    throw new ArgumentException("Destination span is too small to hold the encoded bytes.");
+                
+                Unsafe.Add(ref dst, byteIdx++) = (byte)(0xC0 | ((c >> 6) & 0x1F));
+                Unsafe.Add(ref dst, byteIdx++) = (byte)(0x80 | (c & 0x3F));
+            }
+            else
+            {
+                if (byteIdx + 3 > destination.Length)
+                    throw new ArgumentException("Destination span is too small to hold the encoded bytes.");
+                
+                Unsafe.Add(ref dst, byteIdx++) = (byte)(0xE0 | ((c >> 12) & 0x0F));
+                Unsafe.Add(ref dst, byteIdx++) = (byte)(0x80 | ((c >> 6) & 0x3F));
+                Unsafe.Add(ref dst, byteIdx++) = (byte)(0x80 | (c & 0x3F));
+            }
+        }
+        return (int)byteIdx;
     }
 
     /// <summary>
@@ -136,31 +188,39 @@ public static class ModifiedUtf8
     /// Gets the byte count for the given input string.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetByteCount(ReadOnlySpan<char> str)
+    public static int GetByteCount(ReadOnlySpan<char> str)
     {
-        var byteCount = 0;
-        
-        foreach (char c in str)
+        ref char start = ref MemoryMarshal.GetReference(str);
+        nint length = str.Length;
+        nint i = 0;
+        nint byteCount = 0;
+
+        if (Vector256.IsHardwareAccelerated && length >= Vector256<ushort>.Count)
         {
-            if (c == 0)
-                byteCount += 2;
-            else
-                byteCount += c switch
-                {
-                    >= '\u0001' and <= '\u007F' => 1,
-                    <= '\u07FF' => 2,
-                    _ => 3
-                };
+            var asciiMask = Vector256.Create((ushort)0xFF80);
+            for (; i <= length - Vector256<ushort>.Count; i += Vector256<ushort>.Count)
+            {
+                Vector256<ushort> v = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref start), (nuint)i);
+                if ((v & asciiMask) != Vector256<ushort>.Zero)
+                    goto Scalar;
+            }
+            byteCount = i;
         }
-        
-        return byteCount;
+
+        Scalar:
+        for (; i < length; i++)
+        {
+            char c = Unsafe.Add(ref start, i);
+            byteCount += c == 0 ? 2 : c <= 0x7F ? 1 : c <= 0x7FF ? 2 : 3;
+        }
+        return (int)byteCount;
     }
     
     /// <summary>
     /// Internal implementation of GetBytes that writes to a pre-allocated span.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetBytesInternal(ReadOnlySpan<char> str, Span<byte> bytes)
+    private static void GetBytesInternal(ReadOnlySpan<char> str, Span<byte> bytes)
     {
         var position = 0;
         
@@ -187,8 +247,6 @@ public static class ModifiedUtf8
                     break;
             }
         }
-        
-        return position;
     }
     
     /// <summary>

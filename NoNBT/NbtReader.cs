@@ -23,6 +23,7 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
     private bool _disposed;
 
     private static readonly bool s_isLittleEndian = BitConverter.IsLittleEndian;
+    private static ReadOnlySpan<byte> ShuffleMaskInt32 => [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12];
 
     /// <summary>
     /// Reads the next NBT tag from the stream.
@@ -44,7 +45,7 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         var tagType = (NbtTagType)ReadByte();
         if (named && tagType == NbtTagType.End)
             return null;
-        
+
         string? name = null;
 
         if (named)
@@ -93,13 +94,13 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         {
             int elementSize = GetPrimitiveSize(listType);
             bool needsSwap = s_isLittleEndian;
-            
+
             int byteCount = count * elementSize;
             if ((uint)byteCount > 512 * 1024 * 1024)
             {
                 throw new IOException($"List size ({byteCount} bytes) exceeds safety limits.");
             }
-            
+
             byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
             try
             {
@@ -119,7 +120,7 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         }
         else
         {
-            for (var i = 0; i < count; i++)
+            for (nint i = 0; i < count; i++)
             {
                 NbtTag element = ReadTagPayload(listType, null);
                 list.Add(element);
@@ -199,31 +200,38 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
     {
         ref byte srcRef = ref MemoryMarshal.GetReference(source);
         ref int dstRef = ref MemoryMarshal.GetReference(destination);
-        int length = destination.Length;
-        var i = 0;
+        nint length = destination.Length;
+        nint i = 0;
 
-        if (Ssse3.IsSupported && length >= 8)
+        if (Avx2.IsSupported)
         {
-            var shuffleMask = Vector128.Create(
-                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+            var mask = Vector256.Create(
+                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12,
+                3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
 
-            for (; i <= length - 8; i += 8)
+            for (; i <= length - 16; i += 16)
             {
-                Vector128<byte> v0 = Vector128.LoadUnsafe(ref srcRef, (nuint)(i * 4));
-                Vector128<byte> v1 = Vector128.LoadUnsafe(ref srcRef, (nuint)(i * 4 + 16));
+                Vector256<byte> v0 = Vector256.LoadUnsafe(ref srcRef, (nuint)(i * 4));
+                Vector256<byte> v1 = Vector256.LoadUnsafe(ref srcRef, (nuint)(i * 4 + 32));
+                Avx2.Shuffle(v0, mask).As<byte, int>().StoreUnsafe(ref dstRef, (nuint)i);
+                Avx2.Shuffle(v1, mask).As<byte, int>().StoreUnsafe(ref dstRef, (nuint)(i + 8));
+            }
+        }
 
-                v0 = Ssse3.Shuffle(v0, shuffleMask);
-                v1 = Ssse3.Shuffle(v1, shuffleMask);
-
-                v0.As<byte, int>().StoreUnsafe(ref dstRef, (nuint)i);
-                v1.As<byte, int>().StoreUnsafe(ref dstRef, (nuint)(i + 4));
+        if (Ssse3.IsSupported)
+        {
+            var mask = Vector128.Create((byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+            for (; i <= length - 4; i += 4)
+            {
+                Vector128<byte> v = Vector128.LoadUnsafe(ref srcRef, (nuint)(i * 4));
+                Ssse3.Shuffle(v, mask).As<byte, int>().StoreUnsafe(ref dstRef, (nuint)i);
             }
         }
 
         for (; i < length; i++)
         {
             Unsafe.Add(ref dstRef, i) = BinaryPrimitives.ReverseEndianness(
-                Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref srcRef, i * 4)));
+                Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref srcRef, (nint)(i * 4))));
         }
     }
 
@@ -242,15 +250,11 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
             Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
             _stream.ReadExactly(bufferSpan);
 
-            bool needsSwap = s_isLittleEndian;
             var result = new long[length];
 
-            if (needsSwap)
+            if (s_isLittleEndian)
             {
-                for (var i = 0; i < length; i++)
-                {
-                    result[i] = BinaryPrimitives.ReadInt64BigEndian(bufferSpan[(i * sizeof(long))..]);
-                }
+                ReverseEndiannessInt64(bufferSpan, result);
             }
             else
             {
@@ -262,6 +266,33 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         finally
         {
             ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
+    }
+
+    private static void ReverseEndiannessInt64(ReadOnlySpan<byte> source, Span<long> destination)
+    {
+        ref byte srcRef = ref MemoryMarshal.GetReference(source);
+        ref long dstRef = ref MemoryMarshal.GetReference(destination);
+        nint length = destination.Length;
+        nint i = 0;
+
+        if (Avx2.IsSupported)
+        {
+            var mask = Vector256.Create(
+                (byte)7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8,
+                7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
+
+            for (; i <= length - 4; i += 4)
+            {
+                Vector256<byte> v = Vector256.LoadUnsafe(ref srcRef, (nuint)(i * 8));
+                Avx2.Shuffle(v, mask).As<byte, long>().StoreUnsafe(ref dstRef, (nuint)i);
+            }
+        }
+
+        for (; i < length; i++)
+        {
+            Unsafe.Add(ref dstRef, i) = BinaryPrimitives.ReverseEndianness(
+                Unsafe.ReadUnaligned<long>(ref Unsafe.Add(ref srcRef, (nint)(i * 8))));
         }
     }
 
