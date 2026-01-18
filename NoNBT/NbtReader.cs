@@ -23,7 +23,6 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
     private bool _disposed;
 
     private static readonly bool s_isLittleEndian = BitConverter.IsLittleEndian;
-    private static ReadOnlySpan<byte> ShuffleMaskInt32 => [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12];
 
     /// <summary>
     /// Reads the next NBT tag from the stream.
@@ -231,7 +230,7 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         for (; i < length; i++)
         {
             Unsafe.Add(ref dstRef, i) = BinaryPrimitives.ReverseEndianness(
-                Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref srcRef, (nint)(i * 4))));
+                Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref srcRef, i * 4)));
         }
     }
 
@@ -292,7 +291,7 @@ public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposab
         for (; i < length; i++)
         {
             Unsafe.Add(ref dstRef, i) = BinaryPrimitives.ReverseEndianness(
-                Unsafe.ReadUnaligned<long>(ref Unsafe.Add(ref srcRef, (nint)(i * 8))));
+                Unsafe.ReadUnaligned<long>(ref Unsafe.Add(ref srcRef, i * 8)));
         }
     }
 
