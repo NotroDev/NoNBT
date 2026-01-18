@@ -1,7 +1,10 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using NoNBT.Tags;
 
 namespace NoNBT;
@@ -14,11 +17,12 @@ namespace NoNBT;
 /// Supports synchronous and asynchronous operations. Async operations utilize Task.Run
 /// for improved performance over granular async IO for small reads.
 /// </remarks>
-public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAsyncDisposable
+public sealed class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAsyncDisposable
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private bool _disposed;
-    private readonly byte[] _primitiveReadBuffer = new byte[8];
+
+    private static readonly bool s_isLittleEndian = BitConverter.IsLittleEndian;
 
     /// <summary>
     /// Reads the next NBT tag from the stream.
@@ -38,8 +42,11 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         CheckDisposed();
 
         var tagType = (NbtTagType)ReadByte();
-        string? name = null;
+        if (named && tagType == NbtTagType.End)
+            return null;
         
+        string? name = null;
+
         if (named)
         {
             name = ReadStringInternal();
@@ -51,7 +58,6 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private NbtTag ReadTagPayload(NbtTagType type, string? name)
     {
-        CheckDisposed();
         return type switch
         {
             NbtTagType.Byte => new ByteTag(name, ReadByteChecked()),
@@ -74,7 +80,6 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private ListTag ReadListPayload(string? name)
     {
-        CheckDisposed();
         var listType = (NbtTagType)ReadByteChecked();
         int count = ReadIntCheckedLength();
         if (listType == NbtTagType.End && count > 0)
@@ -87,14 +92,29 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             or NbtTagType.Double)
         {
             int elementSize = GetPrimitiveSize(listType);
-            bool needsSwap = BitConverter.IsLittleEndian;
-
-            for (var i = 0; i < count; i++)
+            bool needsSwap = s_isLittleEndian;
+            
+            int byteCount = count * elementSize;
+            if ((uint)byteCount > 512 * 1024 * 1024)
             {
-                ReadToPrimitiveBuffer(elementSize);
-                NbtTag element = CreatePrimitiveTag(listType, null, _primitiveReadBuffer.AsSpan(0, elementSize),
-                    needsSwap);
-                list.Add(element);
+                throw new IOException($"List size ({byteCount} bytes) exceeds safety limits.");
+            }
+            
+            byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
+            try
+            {
+                Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
+                _stream.ReadExactly(bufferSpan);
+                for (var i = 0; i < count; i++)
+                {
+                    ReadOnlySpan<byte> elementSpan = bufferSpan.Slice(i * elementSize, elementSize);
+                    NbtTag element = CreatePrimitiveTag(listType, null, elementSpan, needsSwap);
+                    list.Add(element);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rentedBuffer);
             }
         }
         else
@@ -111,23 +131,26 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private CompoundTag ReadCompoundPayload(string? name)
     {
-        CheckDisposed();
         var compound = new CompoundTag(name);
+
         while (true)
         {
-            int tagTypeByte = ReadByte();
-            if (tagTypeByte == -1) throw new EndOfStreamException("Unexpected end of stream within TAG_Compound.");
-            if (tagTypeByte == (int)NbtTagType.End) break;
+            int tagTypeByte = _stream.ReadByte();
 
-            var childType = (NbtTagType)tagTypeByte;
-            string? childName = ReadStringInternal();
-            if (childName == null) throw new IOException("Null name encountered for tag within TAG_Compound.");
+            if (tagTypeByte == -1)
+                ThrowUnexpectedEndOfStream();
+            if (tagTypeByte == (int)NbtTagType.End)
+                break;
 
-            NbtTag childTag = ReadTagPayload(childType, childName);
-            compound.Add(childTag);
+            string childName = ReadStringInternal();
+            compound.Add(ReadTagPayload((NbtTagType)tagTypeByte, childName));
         }
 
         return compound;
+
+        [DoesNotReturn]
+        static void ThrowUnexpectedEndOfStream() =>
+            throw new EndOfStreamException("Unexpected end of stream within TAG_Compound.");
     }
 
     private ByteArrayTag ReadByteArrayPayload(string? name)
@@ -143,8 +166,8 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         if (length == 0) return new IntArrayTag(name, []);
 
         int byteCount = length * sizeof(int);
-        if (byteCount is < 0 or > 1024 * 1024 * 512)
-            throw new IOException($"IntArray size ({byteCount} bytes) is invalid or exceeds safety limits.");
+        if ((uint)byteCount > 512 * 1024 * 1024)
+            throw new IOException($"IntArray size ({byteCount} bytes) exceeds safety limits.");
 
         byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
         try
@@ -152,15 +175,11 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
             _stream.ReadExactly(bufferSpan);
 
-            bool needsSwap = BitConverter.IsLittleEndian;
             var result = new int[length];
 
-            if (needsSwap)
+            if (s_isLittleEndian)
             {
-                for (var i = 0; i < length; i++)
-                {
-                    result[i] = BinaryPrimitives.ReadInt32BigEndian(bufferSpan[(i * sizeof(int))..]);
-                }
+                ReverseEndiannessInt32(bufferSpan, result);
             }
             else
             {
@@ -174,7 +193,40 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             ArrayPool<byte>.Shared.Return(rentedBuffer);
         }
     }
-    
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReverseEndiannessInt32(ReadOnlySpan<byte> source, Span<int> destination)
+    {
+        ref byte srcRef = ref MemoryMarshal.GetReference(source);
+        ref int dstRef = ref MemoryMarshal.GetReference(destination);
+        int length = destination.Length;
+        var i = 0;
+
+        if (Ssse3.IsSupported && length >= 8)
+        {
+            var shuffleMask = Vector128.Create(
+                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+
+            for (; i <= length - 8; i += 8)
+            {
+                Vector128<byte> v0 = Vector128.LoadUnsafe(ref srcRef, (nuint)(i * 4));
+                Vector128<byte> v1 = Vector128.LoadUnsafe(ref srcRef, (nuint)(i * 4 + 16));
+
+                v0 = Ssse3.Shuffle(v0, shuffleMask);
+                v1 = Ssse3.Shuffle(v1, shuffleMask);
+
+                v0.As<byte, int>().StoreUnsafe(ref dstRef, (nuint)i);
+                v1.As<byte, int>().StoreUnsafe(ref dstRef, (nuint)(i + 4));
+            }
+        }
+
+        for (; i < length; i++)
+        {
+            Unsafe.Add(ref dstRef, i) = BinaryPrimitives.ReverseEndianness(
+                Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref srcRef, i * 4)));
+        }
+    }
+
     private LongArrayTag ReadLongArrayPayload(string? name)
     {
         int length = ReadIntCheckedLength();
@@ -190,7 +242,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             Span<byte> bufferSpan = rentedBuffer.AsSpan(0, byteCount);
             _stream.ReadExactly(bufferSpan);
 
-            bool needsSwap = BitConverter.IsLittleEndian;
+            bool needsSwap = s_isLittleEndian;
             var result = new long[length];
 
             if (needsSwap)
@@ -219,39 +271,45 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// </summary>
     public string ReadString() => ReadStringInternal();
 
+    [SkipLocalsInit]
     private string ReadStringInternal()
     {
-        CheckDisposed();
         short length = ReadShortInternal();
+
         switch (length)
         {
             case < 0:
                 throw new IOException($"Invalid string length: {length}");
             case 0:
                 return string.Empty;
-            default:
-            {
-                byte[] stringBytes = ReadBytes(length);
-                try
-                {
-                    return ModifiedUtf8.GetString(stringBytes);
-                }
-                catch (DecoderFallbackException ex)
-                {
-                    throw new IOException("Invalid Modified UTF-8 sequence encountered.", ex);
-                }
-            }
+        }
+
+        byte[]? rentedBuffer = null;
+        Span<byte> stringBytes = length <= 256
+            ? stackalloc byte[length]
+            : (rentedBuffer = ArrayPool<byte>.Shared.Rent(length)).AsSpan(0, length);
+
+        try
+        {
+            _stream.ReadExactly(stringBytes);
+            return ModifiedUtf8.GetString(stringBytes);
+        }
+        finally
+        {
+            if (rentedBuffer != null)
+                ArrayPool<byte>.Shared.Return(rentedBuffer);
         }
     }
 
     /// Reads a 32-bit signed integer (Big Endian).
     public int ReadInt() => ReadIntInternal();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ReadIntInternal()
     {
-        CheckDisposed();
-        ReadToPrimitiveBuffer(sizeof(int));
-        return BinaryPrimitives.ReadInt32BigEndian(_primitiveReadBuffer);
+        Span<byte> buffer = stackalloc byte[4];
+        _stream.ReadExactly(buffer);
+        return BinaryPrimitives.ReadInt32BigEndian(buffer);
     }
 
     /// Reads a 32-bit float (Big Endian).
@@ -259,9 +317,9 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private float ReadFloatInternal()
     {
-        CheckDisposed();
-        ReadToPrimitiveBuffer(sizeof(float));
-        return BinaryPrimitives.ReadSingleBigEndian(_primitiveReadBuffer);
+        Span<byte> buffer = stackalloc byte[4];
+        _stream.ReadExactly(buffer);
+        return BinaryPrimitives.ReadSingleBigEndian(buffer);
     }
 
     /// Reads a 64-bit double (Big Endian).
@@ -269,29 +327,31 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
 
     private double ReadDoubleInternal()
     {
-        CheckDisposed();
-        ReadToPrimitiveBuffer(sizeof(double));
-        return BinaryPrimitives.ReadDoubleBigEndian(_primitiveReadBuffer);
+        Span<byte> buffer = stackalloc byte[8];
+        _stream.ReadExactly(buffer);
+        return BinaryPrimitives.ReadDoubleBigEndian(buffer);
     }
 
     /// Reads a 16-bit short (Big Endian).
     public short ReadShort() => ReadShortInternal();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private short ReadShortInternal()
     {
-        CheckDisposed();
-        ReadToPrimitiveBuffer(sizeof(short));
-        return BinaryPrimitives.ReadInt16BigEndian(_primitiveReadBuffer);
+        Span<byte> buffer = stackalloc byte[2];
+        _stream.ReadExactly(buffer);
+        return BinaryPrimitives.ReadInt16BigEndian(buffer);
     }
 
     /// Reads a 64-bit long (Big Endian).
     public long ReadLong() => ReadLongInternal();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private long ReadLongInternal()
     {
-        CheckDisposed();
-        ReadToPrimitiveBuffer(sizeof(long));
-        return BinaryPrimitives.ReadInt64BigEndian(_primitiveReadBuffer);
+        Span<byte> buffer = stackalloc byte[8];
+        _stream.ReadExactly(buffer);
+        return BinaryPrimitives.ReadInt64BigEndian(buffer);
     }
 
     /// Reads a single byte. Returns -1 if end of stream.
@@ -308,28 +368,27 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// <exception cref="ArgumentOutOfRangeException">If length is negative.</exception>
     /// <exception cref="EndOfStreamException">If stream ends before reading `length` bytes.</exception>
     /// <exception cref="ObjectDisposedException">If reader is disposed.</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte[] ReadBytes(int length)
     {
         CheckDisposed();
+
         switch (length)
         {
             case < 0:
-                throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative.");
+                ThrowNegativeLength(length);
+                break;
             case 0:
                 return [];
         }
 
-        var buffer = new byte[length];
-        var totalRead = 0;
-        while (totalRead < length)
-        {
-            int bytesRead = _stream.Read(buffer, totalRead, length - totalRead);
-            if (bytesRead == 0)
-                throw new EndOfStreamException($"Expected {length} bytes, but stream ended after {totalRead} bytes.");
-            totalRead += bytesRead;
-        }
-
+        byte[] buffer = GC.AllocateUninitializedArray<byte>(length);
+        _stream.ReadExactly(buffer);
         return buffer;
+
+        [DoesNotReturn]
+        static void ThrowNegativeLength(int length) =>
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Length cannot be negative.");
     }
 
     /// <summary>
@@ -397,6 +456,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
         return buffer;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void CheckDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -405,27 +465,19 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     private int ReadIntCheckedLength()
     {
         int length = ReadIntInternal();
-        if (length < 0) throw new IOException($"Invalid array/list/string length encountered: {length}");
-        return length;
+        return length < 0 ? throw new IOException($"Invalid array/list/string length encountered: {length}") : length;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private byte ReadByteChecked()
     {
-        int b = ReadByte();
-        if (b == -1) throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
+        int b = _stream.ReadByte();
+        if (b == -1) ThrowEndOfStream();
         return (byte)b;
-    }
 
-    private void ReadToPrimitiveBuffer(int count)
-    {
-        try
-        {
-            _stream.ReadExactly(_primitiveReadBuffer.AsSpan(0, count));
-        }
-        catch (EndOfStreamException ex)
-        {
-            throw new EndOfStreamException($"Expected {count} bytes for primitive type, but stream ended.", ex);
-        }
+        [DoesNotReturn]
+        static void ThrowEndOfStream() =>
+            throw new EndOfStreamException("Unexpected end of stream while reading required byte.");
     }
 
     private static int GetPrimitiveSize(NbtTagType type) => type switch
@@ -469,7 +521,6 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     public void Dispose()
     {
         Dispose(true);
-        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -486,7 +537,6 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     {
         await DisposeAsyncCore().ConfigureAwait(false);
         Dispose(disposing: false);
-        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -501,7 +551,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// If <paramref name="disposing"/> is true, this will release managed resources, but only when <c>leaveOpen</c> is false.
     /// Suppresses the finalizer to prevent further attempts to release resources.
     /// </remarks>
-    protected virtual void Dispose(bool disposing)
+    private void Dispose(bool disposing)
     {
         if (_disposed) return;
         if (disposing)
@@ -533,7 +583,7 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
     /// A <see cref="ValueTask"/> representing the asynchronous disposal operation.
     /// </returns>
     /// <exception cref="ObjectDisposedException">Thrown if this method is called after the NbtReader has already been disposed.</exception>
-    protected virtual async ValueTask DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore()
     {
         if (_disposed) return;
         if (!leaveOpen && _stream != null)
@@ -541,8 +591,4 @@ public class NbtReader(Stream stream, bool leaveOpen = false) : IDisposable, IAs
             await _stream.DisposeAsync().ConfigureAwait(false);
         }
     }
-
-    /// Finalizer for the NbtReader.
-    /// This method is called when the object is being garbage collected.
-    ~NbtReader() => Dispose(false);
 }
