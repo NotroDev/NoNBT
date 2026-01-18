@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
         <PackageId>NoNBT</PackageId>
-        <Version>2.0.6</Version>
+        <Version>2.0.7</Version>
         <Authors>NotroDev</Authors>
         <Description>A lightweight and straightforward .NET library for reading and writing Minecraft's Named Binary Tag (NBT) data format. Supports all standard NBT tags and Modified UTF-8 encoding.</Description>
         <PackageTags>nbt;minecraft;named binary tag;serialization;binary;data;parser;writer;nonbt</PackageTags>
